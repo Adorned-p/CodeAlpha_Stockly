@@ -83,4 +83,24 @@ public class AuthService {
 
         return new LoginResponse(token, userResponse);
     }
+
+    public void resetPassword(
+            String email,
+            String newPassword
+    ) {
+
+        User user = userRepository
+                .findByEmail(email)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "User not found"
+                        )
+                );
+
+        user.setPassword(
+                passwordEncoder.encode(newPassword)
+        );
+
+        userRepository.save(user);
+    }
 }

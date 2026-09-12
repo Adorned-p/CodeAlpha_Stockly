@@ -5,6 +5,9 @@ import {
   Navigate,
 } from "react-router-dom";
 
+import DashboardLayout from "./components/layout/DashboardLayout";
+import AiAssistant from "./pages/AiAssistant";
+import Profile from "./pages/Profile";
 import Watchlist from "./pages/Watchlist";
 import Transactions from "./pages/Transactions";
 import Portfolio from "./pages/Portfolio";
@@ -24,6 +27,7 @@ function App() {
 
         {/* PUBLIC */}
 
+
         <Route
           path="/"
           element={<Login />}
@@ -36,6 +40,15 @@ function App() {
 
 
         {/* PROTECTED */}
+
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/watchlist"
@@ -60,6 +73,16 @@ function App() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ai-assistant"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <AiAssistant />
+              </DashboardLayout>
             </ProtectedRoute>
           }
         />

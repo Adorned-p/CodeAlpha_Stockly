@@ -1,5 +1,6 @@
 package com.codealpha.stockly.service;
 
+import com.codealpha.stockly.exception.ResourceNotFoundException;
 import com.codealpha.stockly.entity.Role;
 import com.codealpha.stockly.entity.User;
 import com.codealpha.stockly.repository.UserRepository;
@@ -56,7 +57,7 @@ public class UserService {
 
         return userRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
+                        new ResourceNotFoundException(
                                 "User not found: " + id
                         )
                 );

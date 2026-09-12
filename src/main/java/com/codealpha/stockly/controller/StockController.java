@@ -2,16 +2,20 @@ package com.codealpha.stockly.controller;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+
 import com.codealpha.stockly.entity.TimeRange;
 import com.codealpha.stockly.dto.StockPriceHistoryResponse;
 import com.codealpha.stockly.entity.StockPriceHistory;
 import com.codealpha.stockly.repository.StockPriceHistoryRepository;
 import java.time.LocalDateTime;
+
 import com.codealpha.stockly.dto.StockRequest;
 import com.codealpha.stockly.dto.StockResponse;
 import com.codealpha.stockly.dto.StockUpdateRequest;
 import com.codealpha.stockly.entity.Stock;
 import com.codealpha.stockly.service.StockService;
+import com.codealpha.stockly.service.CurrencyConversionService;
+
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -22,18 +26,57 @@ import java.util.List;
 @RequestMapping("/api/stocks")
 public class StockController {
 
-    private final StockPriceHistoryRepository
-            priceHistoryRepository;
-
+    private final StockPriceHistoryRepository priceHistoryRepository;
     private final StockService stockService;
+    private final CurrencyConversionService currencyConversionService;
 
     public StockController(
             StockService stockService,
-            StockPriceHistoryRepository priceHistoryRepository
+            StockPriceHistoryRepository priceHistoryRepository,
+            CurrencyConversionService currencyConversionService
     ) {
         this.stockService = stockService;
         this.priceHistoryRepository = priceHistoryRepository;
+        this.currencyConversionService = currencyConversionService;
     }
+
+    // =========================================================
+    // SEARCH STOCKS
+    // =========================================================
+
+    @GetMapping("/search")
+    public List<StockResponse> searchStocks(
+            @RequestParam String query
+    ) {
+
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Search query is required"
+            );
+        }
+
+        String search =
+                query.trim().toLowerCase();
+
+        return stockService
+                .getAllStocks()
+                .stream()
+                .filter(stock ->
+                        stock.getSymbol()
+                                .toLowerCase()
+                                .contains(search)
+                                ||
+                                stock.getCompanyName()
+                                        .toLowerCase()
+                                        .contains(search)
+                )
+                .map(this::toResponse)
+                .toList();
+    }
+
+    // =========================================================
+    // PRICE HISTORY
+    // =========================================================
 
     @GetMapping("/{symbol}/history")
     public List<StockPriceHistoryResponse> getPriceHistory(
@@ -57,6 +100,10 @@ public class StockController {
 
             case ONE_MONTH:
                 start = end.minusDays(30);
+                break;
+
+            case THREE_MONTHS:
+                start = end.minusDays(90);
                 break;
 
             case ONE_YEAR:
@@ -85,12 +132,9 @@ public class StockController {
                 .toList();
     }
 
-
-    /*
-     * ================================================
-     * GET ALL STOCKS
-     * ================================================
-     */
+    // =========================================================
+    // GET ALL STOCKS
+    // =========================================================
 
     @GetMapping
     public List<StockResponse> getAllStocks() {
@@ -102,12 +146,9 @@ public class StockController {
                 .toList();
     }
 
-
-    /*
-     * ================================================
-     * GET STOCK BY SYMBOL
-     * ================================================
-     */
+    // =========================================================
+    // GET STOCK BY SYMBOL
+    // =========================================================
 
     @GetMapping("/{symbol}")
     public StockResponse getStockBySymbol(
@@ -120,13 +161,9 @@ public class StockController {
         return toResponse(stock);
     }
 
-
-    /*
-     * ================================================
-     * CREATE STOCK
-     * ADMIN ONLY
-     * ================================================
-     */
+    // =========================================================
+    // CREATE STOCK
+    // =========================================================
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -148,10 +185,21 @@ public class StockController {
                 request.getCurrentPrice()
         );
 
-        stock.setOpeningPrice(request.getCurrentPrice());
-        stock.setPreviousClose(request.getCurrentPrice());
-        stock.setDayHigh(request.getCurrentPrice());
-        stock.setDayLow(request.getCurrentPrice());
+        stock.setOpeningPrice(
+                request.getCurrentPrice()
+        );
+
+        stock.setPreviousClose(
+                request.getCurrentPrice()
+        );
+
+        stock.setDayHigh(
+                request.getCurrentPrice()
+        );
+
+        stock.setDayLow(
+                request.getCurrentPrice()
+        );
 
         stock.setSector(
                 request.getSector()
@@ -161,9 +209,6 @@ public class StockController {
                 request.getExchange().toUpperCase()
         );
 
-        /*
-         * New stocks are ACTIVE.
-         */
         stock.setStatus(
                 com.codealpha.stockly.entity.StockStatus.ACTIVE
         );
@@ -174,13 +219,9 @@ public class StockController {
         return toResponse(savedStock);
     }
 
-
-    /*
-     * ================================================
-     * UPDATE STOCK
-     * ADMIN ONLY
-     * ================================================
-     */
+    // =========================================================
+    // UPDATE STOCK
+    // =========================================================
 
     @PutMapping("/{symbol}")
     public StockResponse updateStock(
@@ -201,35 +242,19 @@ public class StockController {
         return toResponse(updatedStock);
     }
 
+    // =========================================================
+    // ENTITY → RESPONSE
+    // =========================================================
 
-    /*
-     * ================================================
-     * DELETE STOCK
-     * ADMIN ONLY
-     * ================================================
-     */
-
-//    @DeleteMapping("/{symbol}")
-//    @ResponseStatus(HttpStatus.NO_CONTENT)
-//    public void deleteStock(
-//            @PathVariable String symbol
-//    ) {
-//
-//        stockService.deleteStock(symbol);
-//    }
-
-
-    /*
-     * ================================================
-     * ENTITY → RESPONSE
-     * ================================================
-     */
-
-    private StockResponse toResponse(Stock stock) {
+    private StockResponse toResponse(
+            Stock stock
+    ) {
 
         BigDecimal priceChange =
                 stock.getCurrentPrice()
-                        .subtract(stock.getPreviousClose());
+                        .subtract(
+                                stock.getPreviousClose()
+                        );
 
         BigDecimal changePercentage =
                 BigDecimal.ZERO;
@@ -239,7 +264,9 @@ public class StockController {
 
             changePercentage =
                     priceChange
-                            .multiply(BigDecimal.valueOf(100))
+                            .multiply(
+                                    BigDecimal.valueOf(100)
+                            )
                             .divide(
                                     stock.getPreviousClose(),
                                     2,
@@ -247,11 +274,49 @@ public class StockController {
                             );
         }
 
+        /*
+         * Stock currently does not have a currency field.
+         *
+         * Your existing global stocks use exchange information,
+         * so determine the native currency from the exchange.
+         *
+         * NSE/BSE -> INR
+         * Everything else -> USD for the current US-market stocks.
+         */
+        String currency = getStockCurrency(stock);
+
+        BigDecimal currentPriceInr;
+        BigDecimal exchangeRateToInr;
+
+        if ("INR".equals(currency)) {
+
+            currentPriceInr =
+                    stock.getCurrentPrice();
+
+            exchangeRateToInr =
+                    BigDecimal.ONE;
+
+        } else {
+
+            currentPriceInr =
+                    currencyConversionService.convertToInr(
+                            stock.getCurrentPrice(),
+                            currency
+                    );
+
+            exchangeRateToInr =
+                    currencyConversionService.getExchangeRate(
+                            currency
+                    );
+        }
+
         return new StockResponse(
                 stock.getId(),
                 stock.getSymbol(),
                 stock.getCompanyName(),
                 stock.getCurrentPrice(),
+                currentPriceInr,
+                exchangeRateToInr,
                 stock.getOpeningPrice(),
                 stock.getPreviousClose(),
                 stock.getDayHigh(),
@@ -262,5 +327,31 @@ public class StockController {
                 stock.getExchange(),
                 stock.getStatus()
         );
+    }
+
+    // =========================================================
+    // STOCK CURRENCY
+    // =========================================================
+
+    private String getStockCurrency(
+            Stock stock
+    ) {
+
+        String exchange = stock.getExchange();
+
+        if (exchange == null) {
+            return "USD";
+        }
+
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
+        if ("NSE".equals(normalizedExchange)
+                || "BSE".equals(normalizedExchange)) {
+
+            return "INR";
+        }
+
+        return "USD";
     }
 }

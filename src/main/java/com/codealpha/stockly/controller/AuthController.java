@@ -20,6 +20,20 @@ public class AuthController {
         this.authService = authService;
     }
 
+    @PostMapping("/reset-password")
+    public String resetPassword(
+            @RequestParam String email,
+            @RequestParam String newPassword
+    ) {
+
+        authService.resetPassword(
+                email,
+                newPassword
+        );
+
+        return "Password reset successfully";
+    }
+
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse register(@Valid @RequestBody RegisterRequest request) {

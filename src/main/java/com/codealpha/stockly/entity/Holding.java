@@ -33,6 +33,9 @@ public class Holding {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal averageBuyPrice;
 
+    @Column(nullable = false)
+    private Integer reservedQuantity = 0;
+
     public Holding() {
     }
 
@@ -73,6 +76,15 @@ public class Holding {
     }
 
     public void setAverageBuyPrice(BigDecimal averageBuyPrice) {
+
         this.averageBuyPrice = averageBuyPrice;
+    }
+
+    public Integer getReservedQuantity() {
+        return reservedQuantity;
+    }
+
+    public void setReservedQuantity(Integer reservedQuantity) {
+        this.reservedQuantity = reservedQuantity;
     }
 }

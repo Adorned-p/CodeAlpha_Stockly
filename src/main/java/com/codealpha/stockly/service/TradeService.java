@@ -1,5 +1,7 @@
 package com.codealpha.stockly.service;
 
+import com.codealpha.stockly.entity.PortfolioSnapshot;
+import com.codealpha.stockly.repository.PortfolioSnapshotRepository;
 import com.codealpha.stockly.dto.SellRequest;
 import com.codealpha.stockly.dto.BuyRequest;
 import com.codealpha.stockly.dto.TradeResponse;
@@ -22,6 +24,8 @@ import java.time.LocalDateTime;
 @Service
 public class TradeService {
 
+    private final CurrencyConversionService currencyConversionService;
+    private final PortfolioSnapshotRepository portfolioSnapshotRepository;
     private final UserRepository userRepository;
     private final StockRepository stockRepository;
     private final HoldingRepository holdingRepository;
@@ -31,12 +35,18 @@ public class TradeService {
             UserRepository userRepository,
             StockRepository stockRepository,
             HoldingRepository holdingRepository,
-            TransactionRepository transactionRepository
+            TransactionRepository transactionRepository,
+            PortfolioSnapshotRepository portfolioSnapshotRepository,
+            CurrencyConversionService currencyConversionService
     ) {
         this.userRepository = userRepository;
         this.stockRepository = stockRepository;
         this.holdingRepository = holdingRepository;
         this.transactionRepository = transactionRepository;
+        this.portfolioSnapshotRepository =
+                portfolioSnapshotRepository;
+        this.currencyConversionService =
+                currencyConversionService;
     }
 
 
@@ -195,6 +205,7 @@ public class TradeService {
                 transactionRepository.save(
                         transaction
                 );
+        savePortfolioSnapshot(user);
 
 
         // 10. Return trade response
@@ -306,6 +317,7 @@ public class TradeService {
         if (remainingQuantity == 0) {
 
             holdingRepository.delete(holding);
+            holdingRepository.flush();
 
         } else {
 
@@ -345,6 +357,7 @@ public class TradeService {
                         transaction
                 );
 
+        savePortfolioSnapshot(user);
 
         // 11. Return response
         return new TradeResponse(
@@ -357,5 +370,95 @@ public class TradeService {
                 remainingBalance,
                 savedTransaction.getExecutedAt()
         );
+    }
+
+    private void savePortfolioSnapshot(User user) {
+
+        BigDecimal portfolioValueInr =
+                BigDecimal.ZERO;
+
+        var holdings =
+                holdingRepository.findByUser(user);
+
+        for (Holding holding : holdings) {
+
+            BigDecimal quantity =
+                    BigDecimal.valueOf(
+                            holding.getQuantity()
+                    );
+
+            BigDecimal currentPrice =
+                    holding.getStock()
+                            .getCurrentPrice();
+
+            BigDecimal currentValue =
+                    currentPrice.multiply(quantity);
+
+            String currency =
+                    getStockCurrency(
+                            holding.getStock()
+                    );
+
+            BigDecimal currentValueInr;
+
+            if ("INR".equals(currency)) {
+
+                currentValueInr =
+                        currentValue;
+
+            } else {
+
+                currentValueInr =
+                        currencyConversionService.convertToInr(
+                                currentValue,
+                                currency
+                        );
+            }
+
+            portfolioValueInr =
+                    portfolioValueInr.add(
+                            currentValueInr
+                    );
+        }
+
+        PortfolioSnapshot snapshot =
+                new PortfolioSnapshot();
+
+        snapshot.setUser(user);
+
+        snapshot.setPortfolioValue(
+                portfolioValueInr
+        );
+
+        snapshot.setRecordedAt(
+                LocalDateTime.now()
+        );
+
+        portfolioSnapshotRepository.save(
+                snapshot
+        );
+    }
+
+    private String getStockCurrency(
+            Stock stock
+    ) {
+
+        String exchange =
+                stock.getExchange();
+
+        if (exchange == null) {
+            return "USD";
+        }
+
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
+        if ("NSE".equals(normalizedExchange)
+                || "BSE".equals(normalizedExchange)) {
+
+            return "INR";
+        }
+
+        return "USD";
     }
 }

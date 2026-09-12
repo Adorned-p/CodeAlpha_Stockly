@@ -6,9 +6,14 @@ public class WatchlistResponse {
 
     private String symbol;
     private String companyName;
+
     private BigDecimal currentPrice;
+    private BigDecimal currentPriceInr;
+    private BigDecimal exchangeRateToInr;
+
     private BigDecimal priceChange;
     private BigDecimal changePercentage;
+
     private String sector;
     private String exchange;
 
@@ -19,6 +24,8 @@ public class WatchlistResponse {
             String symbol,
             String companyName,
             BigDecimal currentPrice,
+            BigDecimal currentPriceInr,
+            BigDecimal exchangeRateToInr,
             BigDecimal priceChange,
             BigDecimal changePercentage,
             String sector,
@@ -27,6 +34,8 @@ public class WatchlistResponse {
         this.symbol = symbol;
         this.companyName = companyName;
         this.currentPrice = currentPrice;
+        this.currentPriceInr = currentPriceInr;
+        this.exchangeRateToInr = exchangeRateToInr;
         this.priceChange = priceChange;
         this.changePercentage = changePercentage;
         this.sector = sector;
@@ -43,6 +52,14 @@ public class WatchlistResponse {
 
     public BigDecimal getCurrentPrice() {
         return currentPrice;
+    }
+
+    public BigDecimal getCurrentPriceInr() {
+        return currentPriceInr;
+    }
+
+    public BigDecimal getExchangeRateToInr() {
+        return exchangeRateToInr;
     }
 
     public BigDecimal getPriceChange() {

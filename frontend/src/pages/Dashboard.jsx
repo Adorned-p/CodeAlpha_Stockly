@@ -1,7 +1,22 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm"
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
 import api from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 import {
   ArrowDownRight,
@@ -25,72 +40,224 @@ import dashboardBg from "../assets/dashboard-bg.jpg";
 
 function Dashboard() {
 
-    const handleInvite = async () => {
-      const referralLink =
-        `${window.location.origin}/register?ref=STOCKLY`;
+  /*
+   * =====================================================
+   * CHART
+   * =====================================================
+   */
+
+   const ALLOCATION_COLORS = [
+     "#087f73",
+     "#2765c7",
+     "#7146ce",
+     "#d8a151",
+   ];
+
+  const [chartPeriod, setChartPeriod] =
+    useState("1D");
+
+  const [portfolioHistory, setPortfolioHistory] =
+    useState([]);
+
+  const [chartLoading, setChartLoading] =
+    useState(false);
+
+  const [showPeriodMenu, setShowPeriodMenu] =
+    useState(false);
+
+
+  /*
+   * =====================================================
+   * GENERAL DASHBOARD STATE
+   * =====================================================
+   */
+
+  const [marketData, setMarketData] = useState({
+    nifty: {
+      name: "NIFTY 50",
+      value: 24813.75,
+      change: 0.86,
+    },
+
+    sensex: {
+      name: "SENSEX",
+      value: 81330.43,
+      change: 0.74,
+    },
+  });
+
+  const [marketStatus, setMarketStatus] = useState({
+    NSE: null,
+    NASDAQ: null,
+  });
+
+  const [inviteMessage, setInviteMessage] =
+    useState("");
+
+  const [showInviteMessage, setShowInviteMessage] =
+    useState(false);
+
+  const [portfolio, setPortfolio] =
+    useState(null);
+
+  const [watchlist, setWatchlist] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+    /*
+     * =====================================================
+     * AI PORTFOLIO INSIGHT
+     * =====================================================
+     */
+
+    const [aiInsight, setAiInsight] =
+      useState("");
+
+    const [aiLoading, setAiLoading] =
+      useState(false);
+
+    const [aiError, setAiError] =
+      useState("");
+
+
+  const navigate = useNavigate();
+
+  const {
+    user,
+    loading: authLoading,
+  } = useAuth();
+
+
+  /*
+   * =====================================================
+   * FETCH PORTFOLIO HISTORY
+   * =====================================================
+   */
+
+  useEffect(() => {
+
+    const fetchPortfolioHistory = async () => {
 
       try {
-        await navigator.clipboard.writeText(
-          referralLink
+
+        setChartLoading(true);
+
+        const rangeMap = {
+          "1D": "ONE_DAY",
+          "1W": "ONE_WEEK",
+          "1M": "ONE_MONTH",
+          "1Y": "ONE_YEAR",
+        };
+
+        const range =
+          rangeMap[chartPeriod];
+
+        const response = await api.get(
+          `/portfolio/history?range=${range}`
         );
 
-        setInviteMessage(
-          "Referral link copied to clipboard!"
+        console.log(
+          "Portfolio history:",
+          response.data
+        );
+
+        setPortfolioHistory(
+          Array.isArray(response.data)
+            ? response.data
+            : []
         );
 
       } catch (error) {
 
-        setInviteMessage(
-          "Your referral link is ready to share."
+        console.error(
+          "Failed to fetch portfolio history:",
+          error
         );
+
+        setPortfolioHistory([]);
+
+      } finally {
+
+        setChartLoading(false);
 
       }
 
-      setShowInviteMessage(true);
-
-      setTimeout(() => {
-        setShowInviteMessage(false);
-      }, 3000);
     };
 
-    const [marketData, setMarketData] = useState({
-      nifty: {
-        name: "NIFTY 50",
-        value: 24813.75,
-        change: 0.86,
-      },
-      sensex: {
-        name: "SENSEX",
-        value: 81330.43,
-        change: 0.74,
-      },
-    });
+    fetchPortfolioHistory();
 
-    const [inviteMessage, setInviteMessage] =
-      useState("");
+  }, [chartPeriod]);
 
-    const [showInviteMessage, setShowInviteMessage] =
-      useState(false);
-
-  const navigate = useNavigate();
-
-  const [user, setUser] = useState(null);
-  const [portfolio, setPortfolio] = useState(null);
-  const [watchlist, setWatchlist] = useState([]);
-
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [error, setError] = useState("");
 
   /*
-   * Portfolio chart period
+   * =====================================================
+   * CHART DATA
+   * =====================================================
    */
-  const [chartPeriod, setChartPeriod] =
-    useState("1D");
 
-  const [showPeriodMenu, setShowPeriodMenu] =
-    useState(false);
+  const portfolioChartData =
+    portfolioHistory.map(
+      (point) => ({
+
+        time: new Date(
+          point.timestamp
+        ).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+
+        value: Number(
+          point.value || 0
+        ),
+
+      })
+    );
+
+
+  /*
+   * =====================================================
+   * INVITE
+   * =====================================================
+   */
+
+  const handleInvite = async () => {
+
+    const referralLink =
+      `${window.location.origin}/register?ref=STOCKLY`;
+
+    try {
+
+      await navigator.clipboard.writeText(
+        referralLink
+      );
+
+      setInviteMessage(
+        "Referral link copied to clipboard!"
+      );
+
+    } catch (error) {
+
+      setInviteMessage(
+        "Your referral link is ready to share."
+      );
+
+    }
+
+    setShowInviteMessage(true);
+
+    setTimeout(() => {
+      setShowInviteMessage(false);
+    }, 3000);
+
+  };
 
 
   /*
@@ -99,8 +266,12 @@ function Dashboard() {
    * =====================================================
    */
 
-  const loadDashboard = async (isRefresh = false) => {
+  const loadDashboard = async (
+    isRefresh = false
+  ) => {
+
     try {
+
       if (isRefresh) {
         setRefreshing(true);
       } else {
@@ -109,36 +280,72 @@ function Dashboard() {
 
       setError("");
 
+
       const [
-        userResponse,
         portfolioResponse,
         watchlistResponse,
         marketResponse,
+        nseStatusResponse,
+        nasdaqStatusResponse,
       ] = await Promise.all([
-        api.get("/users/me"),
+
         api.get("/portfolio"),
+
         api.get("/watchlist"),
+
         api.get("/market/indices"),
+
+        api.get("/market-status/NSE"),
+
+        api.get("/market-status/NASDAQ"),
+
       ]);
 
-      setUser(userResponse.data);
+
+      /*
+       * PORTFOLIO
+       */
 
       setPortfolio(
         portfolioResponse.data
       );
 
+
+      /*
+       * WATCHLIST
+       */
+
       setWatchlist(
+
         Array.isArray(
           watchlistResponse.data
         )
           ? watchlistResponse.data
           : []
+
       );
 
+      /*
+       * MARKET STATUS
+       */
+
+      setMarketStatus({
+        NSE: nseStatusResponse.data,
+        NASDAQ: nasdaqStatusResponse.data,
+      });
+
+
+      /*
+       * MARKET INDICES
+       */
+
       const indices =
-        Array.isArray(marketResponse.data)
+        Array.isArray(
+          marketResponse.data
+        )
           ? marketResponse.data
           : [];
+
 
       const nifty =
         indices.find(
@@ -146,57 +353,61 @@ function Dashboard() {
             index.symbol === "NIFTY50"
         );
 
+
       const sensex =
         indices.find(
           (index) =>
             index.symbol === "SENSEX"
         );
 
+
       if (nifty) {
+
         setMarketData((current) => ({
+
           ...current,
 
           nifty: {
             name: nifty.name,
+
             value: Number(
               nifty.value
             ),
+
             change: Number(
               nifty.changePercentage
             ),
           },
+
         }));
+
       }
 
+
       if (sensex) {
+
         setMarketData((current) => ({
+
           ...current,
 
           sensex: {
             name: sensex.name,
+
             value: Number(
               sensex.value
             ),
+
             change: Number(
               sensex.changePercentage
             ),
           },
+
         }));
+
       }
 
-      /*
-       * Keep market cards stable for now.
-       *
-       * When you create a real market API,
-       * replace this section with:
-       *
-       * const marketResponse =
-       *   await api.get("/market/indices");
-       *
-       * setMarketData(marketResponse.data);
-       */
-
     } catch (err) {
+
       console.error(
         "Dashboard loading failed:",
         err
@@ -208,15 +419,83 @@ function Dashboard() {
       );
 
     } finally {
+
       setLoading(false);
+
       setRefreshing(false);
+
     }
+
+  };
+
+  /*
+   * =====================================================
+   * FETCH AI PORTFOLIO INSIGHT
+   * =====================================================
+   */
+
+  const fetchAiPortfolioInsight = async () => {
+
+    if (aiLoading) {
+      return;
+    }
+
+    try {
+
+      setAiLoading(true);
+      setAiError("");
+
+      const response =
+        await api.get(
+          "/ai/portfolio"
+        );
+
+      setAiInsight(
+        response.data || ""
+      );
+
+    } catch (error) {
+
+      console.error(
+        "Failed to fetch AI portfolio insight:",
+        error
+      );
+
+      setAiError(
+        error?.response?.data?.message ||
+        "Unable to generate portfolio insight."
+      );
+
+    } finally {
+
+      setAiLoading(false);
+
+    }
+
   };
 
 
+  /*
+   * =====================================================
+   * INITIAL DASHBOARD LOAD
+   * =====================================================
+   */
+
   useEffect(() => {
-    loadDashboard();
-  }, []);
+
+    if (
+      !authLoading &&
+      user
+    ) {
+
+      loadDashboard();
+
+    }
+
+  }, [
+    authLoading,
+    user,
+  ]);
 
 
   /*
@@ -225,40 +504,64 @@ function Dashboard() {
    * =====================================================
    */
 
-  const portfolioValue = Number(
-    portfolio?.currentPortfolioValue ?? 0
-  );
+  const portfolioValue =
+    Number(
+      portfolio?.currentPortfolioValueInr ??
+      portfolio?.currentPortfolioValue ??
+      0
+    );
 
-  const investedAmount = Number(
-    portfolio?.totalInvested ?? 0
-  );
 
-  const availableBalance = Number(
-    portfolio?.virtualBalance ?? 0
-  );
+  const investedAmount =
+    Number(
+      portfolio?.totalInvestedInr ??
+      portfolio?.totalInvested ??
+      0
+    );
 
-  const totalProfitLoss = Number(
-    portfolio?.totalProfitLoss ?? 0
-  );
 
-  const holdings = Array.isArray(
-    portfolio?.holdings
-  )
-    ? portfolio.holdings
-    : [];
+  const availableBalance =
+    Number(
+      portfolio?.virtualBalanceInr ??
+      portfolio?.virtualBalance ??
+      0
+    );
+
+
+  const totalProfitLoss =
+    Number(
+      portfolio?.totalProfitLossInr ??
+      portfolio?.totalProfitLoss ??
+      0
+    );
+
+
+  const holdings =
+    Array.isArray(
+      portfolio?.holdings
+    )
+      ? portfolio.holdings
+      : [];
 
 
   /*
-   * Today's P&L
+   * =====================================================
+   * TODAY'S P/L
+   * =====================================================
+   *
+   * Backend does not currently provide
+   * today's P/L, so this safely falls
+   * back to 0 until we implement it.
    */
 
-  const todayProfitLoss = Number(
-    portfolio?.todayProfitLoss ??
-    portfolio?.dailyProfitLoss ??
-    portfolio?.todaysProfitLoss ??
-    portfolio?.todayPnL ??
-    0
-  );
+  const todayProfitLoss =
+    Number(
+      portfolio?.todayProfitLoss ??
+      portfolio?.dailyProfitLoss ??
+      portfolio?.todaysProfitLoss ??
+      portfolio?.todayPnL ??
+      0
+    );
 
 
   /*
@@ -269,22 +572,26 @@ function Dashboard() {
 
   const allTimeReturnPercentage =
     investedAmount > 0
-      ? (totalProfitLoss /
-          investedAmount) *
-        100
+      ? (
+          totalProfitLoss /
+          investedAmount
+        ) * 100
       : 0;
 
 
   const todayReturnPercentage =
-    portfolio?.todayReturnPercentage ??
-    portfolio?.dailyReturnPercentage ??
-    portfolio?.todaysReturnPercentage ??
-    (
-      investedAmount > 0
-        ? (todayProfitLoss /
-            investedAmount) *
-          100
-        : 0
+    Number(
+      portfolio?.todayReturnPercentage ??
+      portfolio?.dailyReturnPercentage ??
+      portfolio?.todaysReturnPercentage ??
+      (
+        investedAmount > 0
+          ? (
+              todayProfitLoss /
+              investedAmount
+            ) * 100
+          : 0
+      )
     );
 
 
@@ -304,7 +611,9 @@ function Dashboard() {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }
-    ).format(Number(value || 0));
+    ).format(
+      Number(value || 0)
+    );
 
   };
 
@@ -316,23 +625,33 @@ function Dashboard() {
     const number =
       Number(value || 0);
 
+
     if (number >= 10000000) {
+
       return `₹${(
         number / 10000000
       ).toFixed(1)}Cr`;
+
     }
 
+
     if (number >= 100000) {
+
       return `₹${(
         number / 100000
       ).toFixed(1)}L`;
+
     }
 
+
     if (number >= 1000) {
+
       return `₹${(
         number / 1000
       ).toFixed(1)}K`;
+
     }
+
 
     return `₹${number.toFixed(0)}`;
 
@@ -346,9 +665,11 @@ function Dashboard() {
     const number =
       Number(value || 0);
 
-    return `${number >= 0 ? "+" : ""}${number.toFixed(
-      2
-    )}%`;
+    return `${
+      number >= 0
+        ? "+"
+        : ""
+    }${number.toFixed(2)}%`;
 
   };
 
@@ -360,7 +681,11 @@ function Dashboard() {
     const number =
       Number(value || 0);
 
-    return `${number >= 0 ? "+" : "-"}${formatMoney(
+    return `${
+      number >= 0
+        ? "+"
+        : "-"
+    }${formatMoney(
       Math.abs(number)
     )}`;
 
@@ -391,45 +716,64 @@ function Dashboard() {
 
       const sorted =
         [...holdings]
+
           .map((holding) => ({
+
             symbol:
               holding.symbol ||
               "UNKNOWN",
 
             value:
               Number(
-                holding.currentValue ||
+                holding.currentValueInr ??
+                holding.currentValue ??
                 0
               ),
+
           }))
+
           .filter(
             (item) =>
               item.value > 0
           )
+
           .sort(
             (a, b) =>
               b.value - a.value
           );
 
+
       if (!sorted.length) {
         return [];
       }
 
-      const topThree =
-        sorted.slice(0, 3);
+
+      /*
+       * Show the actual company name/ticker
+       * for the first 4 holdings.
+       *
+       * Only combine holdings into "Others"
+       * when there are MORE than 4 holdings.
+       */
+
+      const topFour =
+        sorted.slice(0, 4);
+
 
       const othersValue =
         sorted
-          .slice(3)
+          .slice(4)
           .reduce(
             (sum, item) =>
               sum + item.value,
             0
           );
 
+
       const result =
-        topThree.map(
+        topFour.map(
           (item) => ({
+
             ...item,
 
             percentage:
@@ -439,14 +783,25 @@ function Dashboard() {
                     portfolioValue
                   ) * 100
                 : 0,
+
           })
         );
+
+
+      /*
+       * Only create "Others" when
+       * there are actually more than 4 holdings.
+       */
 
       if (othersValue > 0) {
 
         result.push({
-          symbol: "Others",
-          value: othersValue,
+
+          symbol:
+            "Others",
+
+          value:
+            othersValue,
 
           percentage:
             portfolioValue > 0
@@ -455,9 +810,11 @@ function Dashboard() {
                   portfolioValue
                 ) * 100
               : 0,
+
         });
 
       }
+
 
       return result;
 
@@ -477,15 +834,21 @@ function Dashboard() {
     useMemo(() => {
 
       return [...holdings]
+
         .sort(
           (a, b) =>
             Number(
-              b.currentValue || 0
+              b.currentValueInr ??
+              b.currentValue ??
+              0
             ) -
             Number(
-              a.currentValue || 0
+              a.currentValueInr ??
+              a.currentValue ??
+              0
             )
         )
+
         .slice(0, 3);
 
     }, [holdings]);
@@ -501,15 +864,18 @@ function Dashboard() {
     useMemo(() => {
 
       return watchlist
+
         .map((stock) => {
 
           const currentPrice =
             Number(
+              stock.currentPriceInr ??
               stock.currentPrice ??
               stock.price ??
               stock.lastPrice ??
               0
             );
+
 
           const previousPrice =
             Number(
@@ -519,6 +885,7 @@ function Dashboard() {
               0
             );
 
+
           let change =
             Number(
               stock.changePercentage ??
@@ -527,6 +894,7 @@ function Dashboard() {
               stock.percentageChange ??
               0
             );
+
 
           if (
             !change &&
@@ -544,6 +912,7 @@ function Dashboard() {
 
           }
 
+
           return {
             ...stock,
             currentPrice,
@@ -551,11 +920,13 @@ function Dashboard() {
           };
 
         })
+
         .sort(
           (a, b) =>
             Math.abs(b.change) -
             Math.abs(a.change)
         )
+
         .slice(0, 4);
 
     }, [watchlist]);
@@ -563,15 +934,20 @@ function Dashboard() {
 
   /*
    * =====================================================
-   * CHART PERIOD
+   * PERIOD SELECTOR
    * =====================================================
    */
 
   const periodLabels = {
+
     "1D": "Today",
+
     "1W": "1 Week",
+
     "1M": "1 Month",
+
     "1Y": "1 Year",
+
   };
 
 
@@ -580,6 +956,7 @@ function Dashboard() {
   ) => {
 
     setChartPeriod(period);
+
     setShowPeriodMenu(false);
 
   };
@@ -594,6 +971,7 @@ function Dashboard() {
   if (loading) {
 
     return (
+
       <DashboardLayout>
 
         <div className="dashboard-loading">
@@ -607,6 +985,7 @@ function Dashboard() {
         </div>
 
       </DashboardLayout>
+
     );
 
   }
@@ -624,6 +1003,7 @@ function Dashboard() {
   ) {
 
     return (
+
       <DashboardLayout>
 
         <div className="dashboard-error">
@@ -650,6 +1030,7 @@ function Dashboard() {
         </div>
 
       </DashboardLayout>
+
     );
 
   }
@@ -690,11 +1071,13 @@ function Dashboard() {
             </p>
 
             <h1>
+
               Good evening, {firstName}
 
               <span className="wave">
                 👋
               </span>
+
             </h1>
 
             <p>
@@ -773,25 +1156,33 @@ function Dashboard() {
               >
 
                 {totalProfitLoss >= 0 ? (
+
                   <ArrowUpRight
                     size={17}
                   />
+
                 ) : (
+
                   <ArrowDownRight
                     size={17}
                   />
+
                 )}
+
 
                 {formatSignedMoney(
                   totalProfitLoss
                 )}
 
+
                 <span>
+
                   (
                   {formatPercent(
                     allTimeReturnPercentage
                   )}
                   )
+
                 </span>
 
               </div>
@@ -812,8 +1203,6 @@ function Dashboard() {
                 </span>
 
 
-                {/* WORKING PERIOD SELECTOR */}
-
                 <div className="period-selector">
 
                   <button
@@ -821,7 +1210,8 @@ function Dashboard() {
                     className="chart-period"
                     onClick={() =>
                       setShowPeriodMenu(
-                        (value) => !value
+                        (value) =>
+                          !value
                       )
                     }
                   >
@@ -864,7 +1254,9 @@ function Dashboard() {
                               )
                             }
                           >
+
                             {label}
+
                           </button>
 
                         )
@@ -879,99 +1271,145 @@ function Dashboard() {
               </div>
 
 
-              <svg
-                viewBox="0 0 600 180"
-                preserveAspectRatio="none"
-                className="portfolio-svg"
-              >
+              <div className="portfolio-chart">
 
-                <defs>
+                {chartLoading ? (
 
-                  <linearGradient
-                    id="chartFill"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
+                  <div className="chart-loading">
+                    Loading portfolio history...
+                  </div>
+
+                ) : portfolioChartData.length === 0 ? (
+
+                  <div className="chart-empty">
+                    No portfolio history available for this period.
+                  </div>
+
+                ) : (
+
+                  <ResponsiveContainer
+                    width="100%"
+                    height={180}
                   >
 
-                    <stop
-                      offset="0%"
-                      stopOpacity="0.25"
-                    />
+                    <AreaChart
+                      data={portfolioChartData}
+                      margin={{
+                        top: 10,
+                        right: 10,
+                        left: 0,
+                        bottom: 0,
+                      }}
+                    >
 
-                    <stop
-                      offset="100%"
-                      stopOpacity="0"
-                    />
+                      <defs>
 
-                  </linearGradient>
+                        <linearGradient
+                          id="portfolioGradient"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
 
-                </defs>
+                          <stop
+                            offset="0%"
+                            stopColor="#19d3c5"
+                            stopOpacity={0.28}
+                          />
 
+                          <stop
+                            offset="100%"
+                            stopColor="#19d3c5"
+                            stopOpacity={0}
+                          />
 
-                <path
-                  className="chart-area"
-                  d="
-                    M0 150
-                    L35 142
-                    L70 145
-                    L105 128
-                    L140 135
-                    L175 108
-                    L210 116
-                    L245 92
-                    L280 104
-                    L315 82
-                    L350 96
-                    L385 72
-                    L420 82
-                    L455 58
-                    L490 70
-                    L525 43
-                    L560 55
-                    L600 20
-                    L600 180
-                    L0 180
-                    Z
-                  "
-                />
+                        </linearGradient>
+
+                      </defs>
 
 
-                <path
-                  className="chart-line"
-                  pathLength="1"
-                  d="
-                    M0 150
-                    L35 142
-                    L70 145
-                    L105 128
-                    L140 135
-                    L175 108
-                    L210 116
-                    L245 92
-                    L280 104
-                    L315 82
-                    L350 96
-                    L385 72
-                    L420 82
-                    L455 58
-                    L490 70
-                    L525 43
-                    L560 55
-                    L600 20
-                  "
-                />
+                      <XAxis
+                        dataKey="time"
+                        hide
+                      />
 
 
-                <circle
-                  className="chart-dot"
-                  cx="600"
-                  cy="20"
-                  r="4"
-                />
+                      <YAxis
+                        hide
+                        domain={[
+                          "dataMin - 20",
+                          "dataMax + 20",
+                        ]}
+                      />
 
-              </svg>
+
+                      <Tooltip
+                        cursor={{
+                          stroke:
+                            "rgba(255,255,255,0.15)",
+                        }}
+
+                        contentStyle={{
+                          background:
+                            "#0d151d",
+
+                          border:
+                            "1px solid #24313d",
+
+                          borderRadius:
+                            "10px",
+
+                          color:
+                            "#ffffff",
+                        }}
+
+                        labelStyle={{
+                          color:
+                            "#8ea0b5",
+
+                          marginBottom:
+                            "4px",
+                        }}
+
+                        formatter={(value) => [
+
+                          `₹${Number(
+                            value
+                          ).toLocaleString(
+                            "en-IN",
+                            {
+                              minimumFractionDigits:
+                                2,
+                            }
+                          )}`,
+
+                          "Portfolio",
+
+                        ]}
+
+                      />
+
+
+                      <Area
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#19d3c5"
+                        strokeWidth={2}
+                        fill="url(#portfolioGradient)"
+                        dot={false}
+                        activeDot={{
+                          r: 4,
+                        }}
+                      />
+
+                    </AreaChart>
+
+                  </ResponsiveContainer>
+
+                )}
+
+              </div>
 
             </div>
 
@@ -1044,6 +1482,124 @@ function Dashboard() {
           </section>
 
 
+            {/* =================================================
+                          AI PORTFOLIO INSIGHT
+                      ================================================= */}
+
+                      <section className="portfolio-ai-card">
+
+                        <div className="portfolio-ai-header">
+
+                          <div className="portfolio-ai-title">
+
+                            <span className="portfolio-ai-icon">
+                              ✨
+                            </span>
+
+                            <div>
+
+                              <h2>
+                                Stockly AI Portfolio Insight
+                              </h2>
+
+                              <p>
+                                AI-powered analysis of your current
+                                virtual portfolio.
+                              </p>
+
+                            </div>
+
+                          </div>
+
+
+                          <button
+                            type="button"
+                            className="portfolio-ai-button"
+                            onClick={
+                              fetchAiPortfolioInsight
+                            }
+                            disabled={aiLoading}
+                          >
+
+                            <RefreshCw
+                              size={15}
+                              className={
+                                aiLoading
+                                  ? "refresh-spin"
+                                  : ""
+                              }
+                            />
+
+                            {aiLoading
+                              ? "Analyzing..."
+                              : aiInsight
+                                ? "Refresh Analysis"
+                                : "Analyze My Portfolio"}
+
+                          </button>
+
+                        </div>
+
+
+                        {/* =================================================
+                            AI ERROR
+                        ================================================= */}
+
+                        {aiError && (
+
+                          <div className="portfolio-ai-error">
+
+                            {aiError}
+
+                          </div>
+
+                        )}
+
+
+                        {/* =================================================
+                            AI RESULT
+                        ================================================= */}
+
+                        {aiInsight &&
+                          !aiError && (
+
+                            <div className="portfolio-ai-result">
+
+                              <div className="portfolio-ai-disclaimer">
+
+                                <span>
+                                  AI
+                                </span>
+
+                                <p>
+                                  Educational analysis based on your
+                                  current Stockly portfolio data. This
+                                  is not financial advice or a guaranteed
+                                  prediction.
+                                </p>
+
+                              </div>
+
+
+                              <div className="portfolio-ai-response">
+
+                                <ReactMarkdown
+                                  remarkPlugins={[
+                                    remarkGfm
+                                  ]}
+                                >
+                                  {aiInsight}
+                                </ReactMarkdown>
+
+                              </div>
+
+                            </div>
+
+                          )}
+
+                      </section>
+
+
           {/* =================================================
               LOWER GRID
           ================================================= */}
@@ -1092,15 +1648,87 @@ function Dashboard() {
 
                     <div className="allocation-chart">
 
-                      <div
-                        className="allocation-ring"
-                        style={{
-                          background:
-                            createDonutGradient(
-                              allocationData
-                            ),
-                        }}
-                      >
+                      <div className="allocation-pie-wrapper">
+
+                        <ResponsiveContainer
+                          width="100%"
+                          height="100%"
+                        >
+
+                          <PieChart>
+
+                            <Pie
+                              data={allocationData}
+                              dataKey="value"
+                              nameKey="symbol"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius="58%"
+                              outerRadius="88%"
+                              paddingAngle={0}
+                              stroke="none"
+                              isAnimationActive={true}
+                            >
+
+                              {allocationData.map(
+                                (item, index) => (
+                                  <Cell
+                                    key={`allocation-${item.symbol}`}
+                                    fill={
+                                      ALLOCATION_COLORS[
+                                        index %
+                                        ALLOCATION_COLORS.length
+                                      ]
+                                    }
+                                  />
+                                )
+                              )}
+
+                            </Pie>
+
+                            <Tooltip
+                              cursor={false}
+                              allowEscapeViewBox={{
+                                x: true,
+                                y: true,
+                              }}
+                              wrapperStyle={{
+                                outline: "none",
+                                pointerEvents: "none",
+                                zIndex: 100,
+                              }}
+                              content={({ active, payload }) => {
+                                if (
+                                  !active ||
+                                  !payload ||
+                                  payload.length === 0
+                                ) {
+                                  return null;
+                                }
+
+                                const item = payload[0]?.payload;
+
+                                if (!item) {
+                                  return null;
+                                }
+
+                                return (
+                                  <div className="allocation-tooltip">
+                                    <div className="allocation-tooltip-name">
+                                      {item.symbol}
+                                    </div>
+
+                                    <div className="allocation-tooltip-value">
+                                      {formatMoney(item.value)}
+                                    </div>
+                                  </div>
+                                );
+                              }}
+                            />
+
+                          </PieChart>
+
+                        </ResponsiveContainer>
 
                         <div className="allocation-center">
 
@@ -1187,6 +1815,7 @@ function Dashboard() {
                       )
                     }
                   >
+
                     View full portfolio
 
                     <ArrowUpRight
@@ -1202,9 +1831,7 @@ function Dashboard() {
             </div>
 
 
-            {/* =================================================
-                TOP HOLDINGS
-            ================================================= */}
+            {/* TOP HOLDINGS */}
 
             <div className="dashboard-panel">
 
@@ -1260,6 +1887,7 @@ function Dashboard() {
 
                       const pnl =
                         Number(
+                          holding.profitLossInr ??
                           holding.profitLoss ??
                           holding.pnl ??
                           0
@@ -1267,15 +1895,18 @@ function Dashboard() {
 
                       const currentValue =
                         Number(
+                          holding.currentValueInr ??
                           holding.currentValue ??
                           0
                         );
+
 
                       const quantity =
                         Number(
                           holding.quantity ??
                           0
                         );
+
 
                       return (
 
@@ -1334,9 +1965,11 @@ function Dashboard() {
                                   : "negative"
                               }
                             >
+
                               {formatSignedMoney(
                                 pnl
                               )}
+
                             </span>
 
                           </div>
@@ -1355,9 +1988,7 @@ function Dashboard() {
             </div>
 
 
-            {/* =================================================
-                MARKET MOVERS
-            ================================================= */}
+            {/* MARKET MOVERS */}
 
             <div className="dashboard-panel movers-panel">
 
@@ -1464,9 +2095,11 @@ function Dashboard() {
                                 : "negative"
                             }
                           >
+
                             {formatPercent(
                               stock.change
                             )}
+
                           </span>
 
                         </div>
@@ -1527,9 +2160,11 @@ function Dashboard() {
               type="button"
               onClick={handleInvite}
             >
+
               Invite Now
 
               <UserPlus size={16} />
+
             </button>
 
 
@@ -1565,17 +2200,40 @@ function Dashboard() {
             <div className="dashboard-market-snapshot">
 
               <MarketSnapshot
-                name={marketData.nifty.name}
-                value={marketData.nifty.value}
-                change={marketData.nifty.change}
-                onClick={() => navigate("/markets")}
+                name={
+                  marketData.nifty.name
+                }
+                value={
+                  marketData.nifty.value
+                }
+                change={
+                  marketData.nifty.change
+                }
+                marketStatus={
+                  marketStatus.NSE
+                }
+                onClick={() =>
+                  navigate("/markets")
+                }
               />
 
+
               <MarketSnapshot
-                name={marketData.sensex.name}
-                value={marketData.sensex.value}
-                change={marketData.sensex.change}
-                onClick={() => navigate("/markets")}
+                name={
+                  marketData.sensex.name
+                }
+                value={
+                  marketData.sensex.value
+                }
+                change={
+                  marketData.sensex.change
+                }
+                marketStatus={
+                  marketStatus.NSE
+                }
+                onClick={() =>
+                  navigate("/markets")
+                }
               />
 
             </div>
@@ -1600,14 +2258,17 @@ function Dashboard() {
               />
 
               <span>
+
                 {refreshing
                   ? "Refreshing..."
                   : "Refresh"}
+
               </span>
 
             </button>
 
           </section>
+
 
           {/* =================================================
               INVITE FEEDBACK
@@ -1618,7 +2279,9 @@ function Dashboard() {
             <div className="invite-toast">
 
               <span className="invite-toast-icon">
+
                 <Gift size={15} />
+
               </span>
 
               <span>
@@ -1629,12 +2292,12 @@ function Dashboard() {
 
           )}
 
-
         </main>
 
       </div>
 
     </DashboardLayout>
+
   );
 }
 
@@ -1684,6 +2347,7 @@ function DashboardStat({
     </div>
 
   );
+
 }
 
 
@@ -1719,6 +2383,7 @@ function EmptyDashboardState({
     </div>
 
   );
+
 }
 
 
@@ -1740,41 +2405,88 @@ function StockAvatar({
           : ""
       }`}
     >
+
       {symbol
         ?.trim()
         ?.charAt(0) || "?"}
+
     </div>
 
   );
+
 }
 
+
+/* =====================================================
+   MARKET SNAPSHOT
+===================================================== */
 
 function MarketSnapshot({
   name,
   value,
   change,
   onClick,
+  marketStatus,
 }) {
-  const numericValue = Number(value || 0);
-  const numericChange = Number(change || 0);
+
+  const numericValue =
+    Number(value || 0);
+
+  const numericChange =
+    Number(change || 0);
+
 
   return (
+
     <button
       type="button"
       className="market-snapshot"
       onClick={onClick}
     >
+
       <div className="market-snapshot-info">
-        <span className="market-name">
-          {name}
-        </span>
+
+        <div className="market-name-row">
+
+          <span className="market-name">
+            {name}
+          </span>
+
+          {marketStatus && (
+
+            <span
+              className={`market-status ${
+                marketStatus.open
+                  ? "market-status-open"
+                  : "market-status-closed"
+              }`}
+            >
+
+              <span className="market-status-dot" />
+
+              {marketStatus.open
+                ? "Market Open"
+                : "Market Closed"}
+
+            </span>
+
+          )}
+
+        </div>
+
 
         <strong className="market-value">
-          {numericValue.toLocaleString("en-IN", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
+
+          {numericValue.toLocaleString(
+            "en-IN",
+            {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            }
+          )}
+
         </strong>
+
 
         <small
           className={
@@ -1783,16 +2495,28 @@ function MarketSnapshot({
               : "negative"
           }
         >
-          {numericChange >= 0 ? "+" : ""}
+
+          {numericChange >= 0
+            ? "+"
+            : ""}
+
           {numericChange.toFixed(2)}%
+
         </small>
+
       </div>
 
+
       <MiniChart
-        positive={numericChange >= 0}
+        positive={
+          numericChange >= 0
+        }
       />
+
     </button>
+
   );
+
 }
 
 
@@ -1854,6 +2578,7 @@ function MiniChart({
     </svg>
 
   );
+
 }
 
 
@@ -1869,6 +2594,7 @@ function createDonutGradient(
     return "#1d2a35";
   }
 
+
   const colors = [
     "#19d3c5",
     "#2765c7",
@@ -1876,16 +2602,20 @@ function createDonutGradient(
     "#e99b39",
   ];
 
+
   let current = 0;
+
 
   const stops =
     allocation.map(
       (item, index) => {
 
-        const start = current;
+        const start =
+          current;
 
         current +=
           item.percentage;
+
 
         return `${
           colors[
@@ -1896,6 +2626,7 @@ function createDonutGradient(
 
       }
     );
+
 
   return `conic-gradient(${stops.join(
     ", "

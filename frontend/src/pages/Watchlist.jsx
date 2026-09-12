@@ -331,6 +331,7 @@ function Watchlist() {
                       <strong>
                         ₹
                         {formatPrice(
+                          stock.currentPriceInr ??
                           stock.currentPrice
                         )}
                       </strong>

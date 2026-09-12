@@ -12,6 +12,7 @@ import DashboardLayout from "../components/layout/DashboardLayout";
 import api from "../services/api";
 
 function Portfolio() {
+
   const [portfolio, setPortfolio] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -87,7 +88,11 @@ function Portfolio() {
   const holdings = portfolio.holdings || [];
 
   const totalProfitLoss =
-    Number(portfolio.totalProfitLoss || 0);
+    Number(
+      portfolio.totalProfitLossInr ??
+      portfolio.totalProfitLoss ??
+      0
+    );
 
   const isProfit = totalProfitLoss >= 0;
 
@@ -139,6 +144,7 @@ function Portfolio() {
 
             <div className="stat-value">
               ₹{formatMoney(
+                portfolio.virtualBalanceInr ??
                 portfolio.virtualBalance
               )}
             </div>
@@ -161,6 +167,7 @@ function Portfolio() {
 
             <div className="stat-value">
               ₹{formatMoney(
+                portfolio.totalInvestedInr ??
                 portfolio.totalInvested
               )}
             </div>
@@ -186,6 +193,7 @@ function Portfolio() {
 
             <div className="stat-value">
               ₹{formatMoney(
+                portfolio.currentPortfolioValueInr ??
                 portfolio.currentPortfolioValue
               )}
             </div>
@@ -293,7 +301,9 @@ function Portfolio() {
 
                 const profitLoss =
                   Number(
-                    holding.profitLoss || 0
+                    holding.profitLossInr ??
+                    holding.profitLoss ??
+                    0
                   );
 
                 const holdingProfit =
@@ -330,18 +340,21 @@ function Portfolio() {
 
                     <span>
                       ₹{formatMoney(
+                        holding.averageBuyPriceInr ??
                         holding.averageBuyPrice
                       )}
                     </span>
 
                     <span>
                       ₹{formatMoney(
+                        holding.currentPriceInr ??
                         holding.currentPrice
                       )}
                     </span>
 
                     <span>
                       ₹{formatMoney(
+                        holding.currentValueInr ??
                         holding.currentValue
                       )}
                     </span>

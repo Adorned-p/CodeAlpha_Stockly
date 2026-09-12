@@ -20,15 +20,18 @@ public class WatchlistService {
     private final UserRepository userRepository;
     private final StockRepository stockRepository;
     private final WatchlistRepository watchlistRepository;
+    private final CurrencyConversionService currencyConversionService;
 
     public WatchlistService(
             UserRepository userRepository,
             StockRepository stockRepository,
-            WatchlistRepository watchlistRepository
+            WatchlistRepository watchlistRepository,
+            CurrencyConversionService currencyConversionService
     ) {
         this.userRepository = userRepository;
         this.stockRepository = stockRepository;
         this.watchlistRepository = watchlistRepository;
+        this.currencyConversionService = currencyConversionService;
     }
 
     public List<WatchlistResponse> getWatchlist(
@@ -120,13 +123,19 @@ public class WatchlistService {
         );
     }
 
+    // =========================================================
+    // ENTITY → RESPONSE
+    // =========================================================
+
     private WatchlistResponse toResponse(
             Stock stock
     ) {
 
         BigDecimal priceChange =
                 stock.getCurrentPrice()
-                        .subtract(stock.getPreviousClose());
+                        .subtract(
+                                stock.getPreviousClose()
+                        );
 
         BigDecimal changePercentage =
                 BigDecimal.ZERO;
@@ -146,14 +155,70 @@ public class WatchlistService {
                             );
         }
 
+        String currency =
+                getStockCurrency(stock);
+
+        BigDecimal currentPriceInr;
+        BigDecimal exchangeRateToInr;
+
+        if ("INR".equals(currency)) {
+
+            currentPriceInr =
+                    stock.getCurrentPrice();
+
+            exchangeRateToInr =
+                    BigDecimal.ONE;
+
+        } else {
+
+            currentPriceInr =
+                    currencyConversionService.convertToInr(
+                            stock.getCurrentPrice(),
+                            currency
+                    );
+
+            exchangeRateToInr =
+                    currencyConversionService.getExchangeRate(
+                            currency
+                    );
+        }
+
         return new WatchlistResponse(
                 stock.getSymbol(),
                 stock.getCompanyName(),
                 stock.getCurrentPrice(),
+                currentPriceInr,
+                exchangeRateToInr,
                 priceChange,
                 changePercentage,
                 stock.getSector(),
                 stock.getExchange()
         );
+    }
+
+    // =========================================================
+    // STOCK CURRENCY
+    // =========================================================
+
+    private String getStockCurrency(
+            Stock stock
+    ) {
+
+        String exchange = stock.getExchange();
+
+        if (exchange == null) {
+            return "USD";
+        }
+
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
+        if ("NSE".equals(normalizedExchange)
+                || "BSE".equals(normalizedExchange)) {
+
+            return "INR";
+        }
+
+        return "USD";
     }
 }

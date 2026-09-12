@@ -2,6 +2,7 @@ package com.codealpha.stockly.service;
 
 import com.codealpha.stockly.dto.TransactionResponse;
 import com.codealpha.stockly.entity.Transaction;
+import com.codealpha.stockly.entity.TransactionType;
 import com.codealpha.stockly.entity.User;
 import com.codealpha.stockly.repository.TransactionRepository;
 import com.codealpha.stockly.repository.UserRepository;
@@ -24,29 +25,49 @@ public class TransactionService {
     }
 
     public List<TransactionResponse> getUserTransactions(
-            String userEmail
+            String userEmail,
+            TransactionType type
     ) {
 
-        User user = userRepository.findByEmail(userEmail)
+        User user = userRepository
+                .findByEmail(userEmail)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("User not found")
+                        new IllegalArgumentException(
+                                "User not found"
+                        )
                 );
 
-        List<Transaction> transactions =
-                transactionRepository
-                        .findByUserOrderByExecutedAtDesc(user);
+        List<Transaction> transactions;
+
+        if (type == null) {
+
+            transactions =
+                    transactionRepository
+                            .findByUserOrderByExecutedAtDesc(user);
+
+        } else {
+
+            transactions =
+                    transactionRepository
+                            .findByUserAndTypeOrderByExecutedAtDesc(
+                                    user,
+                                    type
+                            );
+        }
 
         return transactions.stream()
-                .map(transaction -> new TransactionResponse(
-                        transaction.getId(),
-                        transaction.getStock().getSymbol(),
-                        transaction.getStock().getCompanyName(),
-                        transaction.getType(),
-                        transaction.getQuantity(),
-                        transaction.getPrice(),
-                        transaction.getTotalAmount(),
-                        transaction.getExecutedAt()
-                ))
+                .map(transaction ->
+                        new TransactionResponse(
+                                transaction.getId(),
+                                transaction.getStock().getSymbol(),
+                                transaction.getStock().getCompanyName(),
+                                transaction.getType(),
+                                transaction.getQuantity(),
+                                transaction.getPrice(),
+                                transaction.getTotalAmount(),
+                                transaction.getExecutedAt()
+                        )
+                )
                 .toList();
     }
 }

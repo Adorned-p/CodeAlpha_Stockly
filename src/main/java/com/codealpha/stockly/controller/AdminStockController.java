@@ -1,5 +1,6 @@
 package com.codealpha.stockly.controller;
 
+import com.codealpha.stockly.service.CurrencyConversionService;
 import com.codealpha.stockly.dto.PriceUpdateRequest;
 import com.codealpha.stockly.dto.StockResponse;
 import com.codealpha.stockly.entity.Stock;
@@ -14,11 +15,14 @@ import java.math.RoundingMode;
 @RequestMapping("/api/admin/stocks")
 public class AdminStockController {
 
+    private final CurrencyConversionService currencyConversionService;
     private final StockService stockService;
 
     public AdminStockController(
-            StockService stockService
+            StockService stockService,
+            CurrencyConversionService currencyConversionService
     ) {
+        this.currencyConversionService = currencyConversionService;
         this.stockService = stockService;
     }
 
@@ -58,23 +62,68 @@ public class AdminStockController {
                             );
         }
 
+        String currency = getStockCurrency(stock);
+
+        BigDecimal currentPriceInr;
+        BigDecimal exchangeRateToInr;
+
+        if ("INR".equals(currency)) {
+
+            currentPriceInr = stock.getCurrentPrice();
+            exchangeRateToInr = BigDecimal.ONE;
+
+        } else {
+
+            currentPriceInr =
+                    currencyConversionService.convertToInr(
+                            stock.getCurrentPrice(),
+                            currency
+                    );
+
+            exchangeRateToInr =
+                    currencyConversionService.getExchangeRate(
+                            currency
+                    );
+        }
+
         return new StockResponse(
                 stock.getId(),
                 stock.getSymbol(),
                 stock.getCompanyName(),
                 stock.getCurrentPrice(),
-
+                currentPriceInr,
+                exchangeRateToInr,
                 stock.getOpeningPrice(),
                 stock.getPreviousClose(),
                 stock.getDayHigh(),
                 stock.getDayLow(),
-
                 priceChange,
                 changePercentage,
-
                 stock.getSector(),
                 stock.getExchange(),
                 stock.getStatus()
         );
+    }
+
+    private String getStockCurrency(
+            Stock stock
+    ) {
+
+        String exchange = stock.getExchange();
+
+        if (exchange == null) {
+            return "USD";
+        }
+
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
+        if ("NSE".equals(normalizedExchange)
+                || "BSE".equals(normalizedExchange)) {
+
+            return "INR";
+        }
+
+        return "USD";
     }
 }

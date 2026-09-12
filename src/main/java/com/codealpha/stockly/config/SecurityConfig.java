@@ -1,5 +1,6 @@
 package com.codealpha.stockly.config;
 
+import jakarta.servlet.http.HttpServletResponse;
 import com.codealpha.stockly.security.JwtAuthenticationFilter;
 
 import org.springframework.context.annotation.Bean;
@@ -91,12 +92,43 @@ public class SecurityConfig {
                         )
                 )
 
+                .exceptionHandling(exception ->
+                        exception
+                                .authenticationEntryPoint(
+                                        (request, response, authException) -> {
+                                            response.setStatus(
+                                                    HttpServletResponse.SC_UNAUTHORIZED
+                                            );
+                                            response.setContentType(
+                                                    "application/json"
+                                            );
+                                            response.getWriter().write(
+                                                    "{\"status\":401,\"message\":\"Authentication required\"}"
+                                            );
+                                        }
+                                )
+                )
+
                 .authorizeHttpRequests(auth -> auth
 
                         .requestMatchers(
                                 "/api/auth/register",
-                                "/api/auth/login"
+                                "/api/auth/login",
+                                "/api/auth/reset-password"
                         ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/market-data/**",
+                                "/api/market/**"
+                        )
+                        .permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/market-data/import/**"
+                        )
+                        .hasRole("ADMIN")
 
                         .requestMatchers(
                                 "/api/wallet/**"

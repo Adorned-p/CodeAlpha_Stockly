@@ -31,6 +31,9 @@ public class User {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal reservedBalance = BigDecimal.ZERO;
+
     public User() {
     }
 
@@ -90,6 +93,16 @@ public class User {
     }
 
     public void setCreatedAt(LocalDateTime createdAt) {
+
         this.createdAt = createdAt;
     }
+
+    public BigDecimal getReservedBalance() {
+        return reservedBalance;
+    }
+
+    public void setReservedBalance(BigDecimal reservedBalance) {
+        this.reservedBalance = reservedBalance;
+    }
+
 }

@@ -6,6 +6,7 @@ import {
   LogOut,
   Search,
   Star,
+  Sparkles,
   User,
 } from "lucide-react";
 
@@ -46,6 +47,11 @@ function DashboardLayout({ children }) {
       name: "Transactions",
       path: "/transactions",
       icon: History,
+    },
+    {
+      name: "Stockly AI",
+      path: "/ai-assistant",
+      icon: Sparkles,
     },
   ];
 

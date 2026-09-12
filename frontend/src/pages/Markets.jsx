@@ -66,10 +66,21 @@ function Markets() {
       const response =
         await api.get("/stocks");
 
+      console.log(
+        "Stocks API response:",
+        response.data
+      );
+
       const data =
         Array.isArray(response.data)
           ? response.data
-          : [];
+          : Array.isArray(response.data?.stocks)
+            ? response.data.stocks
+            : Array.isArray(response.data?.data)
+              ? response.data.data
+              : Array.isArray(response.data?.content)
+                ? response.data.content
+                : [];
 
       setStocks(data);
 
@@ -106,10 +117,7 @@ function Markets() {
    * =====================================================
    */
 
-  const calculateChange = (
-    stock
-  ) => {
-
+  const calculateChange = (stock) => {
     const current =
       Number(
         stock.currentPrice ?? 0
@@ -117,7 +125,7 @@ function Markets() {
 
     const previous =
       Number(
-        stock.previousPrice ?? 0
+        stock.previousClose ?? 0
       );
 
     if (
@@ -132,7 +140,6 @@ function Markets() {
         previous) *
       100
     );
-
   };
 
 
@@ -836,6 +843,7 @@ function Markets() {
 
                                 ₹
                                 {formatPrice(
+                                  stock.currentPriceInr ??
                                   stock.currentPrice
                                 )}
 

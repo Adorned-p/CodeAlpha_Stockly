@@ -9,13 +9,15 @@ public class StockResponse {
     private Long id;
     private String symbol;
     private String companyName;
+
     private BigDecimal currentPrice;
+    private BigDecimal currentPriceInr;
+    private BigDecimal exchangeRateToInr;
 
     private BigDecimal openingPrice;
     private BigDecimal previousClose;
     private BigDecimal dayHigh;
     private BigDecimal dayLow;
-
     private BigDecimal priceChange;
     private BigDecimal changePercentage;
 
@@ -31,6 +33,8 @@ public class StockResponse {
             String symbol,
             String companyName,
             BigDecimal currentPrice,
+            BigDecimal currentPriceInr,
+            BigDecimal exchangeRateToInr,
             BigDecimal openingPrice,
             BigDecimal previousClose,
             BigDecimal dayHigh,
@@ -45,6 +49,8 @@ public class StockResponse {
         this.symbol = symbol;
         this.companyName = companyName;
         this.currentPrice = currentPrice;
+        this.currentPriceInr = currentPriceInr;
+        this.exchangeRateToInr = exchangeRateToInr;
         this.openingPrice = openingPrice;
         this.previousClose = previousClose;
         this.dayHigh = dayHigh;
@@ -70,6 +76,14 @@ public class StockResponse {
 
     public BigDecimal getCurrentPrice() {
         return currentPrice;
+    }
+
+    public BigDecimal getCurrentPriceInr() {
+        return currentPriceInr;
+    }
+
+    public BigDecimal getExchangeRateToInr() {
+        return exchangeRateToInr;
     }
 
     public BigDecimal getOpeningPrice() {

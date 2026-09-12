@@ -1,6 +1,7 @@
 package com.codealpha.stockly.controller;
 
 import com.codealpha.stockly.dto.TransactionResponse;
+import com.codealpha.stockly.entity.TransactionType;
 import com.codealpha.stockly.entity.User;
 import com.codealpha.stockly.service.TransactionService;
 import org.springframework.security.core.Authentication;
@@ -22,13 +23,16 @@ public class TransactionController {
 
     @GetMapping
     public List<TransactionResponse> getTransactions(
-            Authentication authentication
+            Authentication authentication,
+            @RequestParam(required = false) TransactionType type
     ) {
 
-        User user = (User) authentication.getPrincipal();
+        User user =
+                (User) authentication.getPrincipal();
 
         return transactionService.getUserTransactions(
-                user.getEmail()
+                user.getEmail(),
+                type
         );
     }
 }

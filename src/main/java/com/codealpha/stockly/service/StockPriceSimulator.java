@@ -5,7 +5,6 @@ import com.codealpha.stockly.entity.StockPriceHistory;
 import com.codealpha.stockly.entity.StockStatus;
 import com.codealpha.stockly.repository.StockPriceHistoryRepository;
 import com.codealpha.stockly.repository.StockRepository;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +32,6 @@ public class StockPriceSimulator {
     }
 
     @Transactional
-    @Scheduled(fixedRate = 30000)
     public void updatePrices() {
 
         List<Stock> stocks =
