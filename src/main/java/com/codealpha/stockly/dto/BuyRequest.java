@@ -5,11 +5,22 @@ import jakarta.validation.constraints.NotBlank;
 
 public class BuyRequest {
 
+    @NotBlank(message = "Exchange is required")
+    private String exchange;
+
     @NotBlank(message = "Stock symbol is required")
     private String symbol;
 
     @Min(value = 1, message = "Quantity must be at least 1")
     private Integer quantity;
+
+    public String getExchange() {
+        return exchange;
+    }
+
+    public void setExchange(String exchange) {
+        this.exchange = exchange;
+    }
 
     public BuyRequest() {
     }

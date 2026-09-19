@@ -224,6 +224,9 @@ public class PortfolioService {
                                             .getSymbol(),
 
                                     holding.getStock()
+                                            .getExchange(),
+
+                                    holding.getStock()
                                             .getCompanyName(),
 
                                     holding.getQuantity(),

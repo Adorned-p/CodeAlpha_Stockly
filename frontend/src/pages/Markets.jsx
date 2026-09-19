@@ -328,16 +328,19 @@ function Markets() {
    */
 
   const openStockDetails = (
-    symbol
+    symbol,
+    exchange
   ) => {
 
-    if (!symbol) {
+    if (!symbol || !exchange) {
       return;
     }
 
     navigate(
       `/stocks/${encodeURIComponent(
         symbol
+      )}?exchange=${encodeURIComponent(
+        exchange
       )}`
     );
 
@@ -780,7 +783,7 @@ function Markets() {
                           <tr
                             key={
                               stock.id ??
-                              stock.symbol
+                              `${stock.symbol}-${stock.exchange}`
                             }
                             className={
                               active
@@ -789,7 +792,8 @@ function Markets() {
                             }
                             onClick={() =>
                               openStockDetails(
-                                stock.symbol
+                                stock.symbol,
+                                stock.exchange
                               )
                             }
                           >
@@ -958,7 +962,8 @@ function Markets() {
                                   ) {
 
                                     openStockDetails(
-                                      stock.symbol
+                                      stock.symbol,
+                                      stock.exchange
                                     );
 
                                   }

@@ -76,6 +76,7 @@ public class DashboardService {
                                 new TransactionResponse(
                                         transaction.getId(),
                                         transaction.getStock().getSymbol(),
+                                        transaction.getStock().getExchange(),
                                         transaction.getStock().getCompanyName(),
                                         transaction.getType(),
                                         transaction.getQuantity(),

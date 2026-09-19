@@ -5,6 +5,9 @@ import jakarta.validation.constraints.NotBlank;
 
 public class SellRequest {
 
+    @NotBlank(message = "Exchange is required")
+    private String exchange;
+
     @NotBlank(message = "Stock symbol is required")
     private String symbol;
 
@@ -12,6 +15,14 @@ public class SellRequest {
     private Integer quantity;
 
     public SellRequest() {
+    }
+
+    public String getExchange() {
+        return exchange;
+    }
+
+    public void setExchange(String exchange) {
+        this.exchange = exchange;
     }
 
     public String getSymbol() {

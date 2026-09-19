@@ -29,15 +29,17 @@ public class HistoricalMarketDataController {
     // GET HISTORICAL MARKET DATA
     // =========================================================
 
-    @GetMapping("/history/{symbol}")
+    @GetMapping("/{symbol}/history")
     public List<MarketCandleResponse> getHistoricalData(
             @PathVariable String symbol,
-            @RequestParam(defaultValue = "1d") String interval,
+            @RequestParam String exchange,
+            @RequestParam(defaultValue = "1day") String interval,
             @RequestParam(defaultValue = "100") int outputSize
     ) {
 
         return marketQuoteService.getHistoricalData(
                 symbol,
+                exchange,
                 interval,
                 outputSize
         );

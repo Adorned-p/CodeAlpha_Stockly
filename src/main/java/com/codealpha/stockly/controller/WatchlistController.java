@@ -21,45 +21,64 @@ public class WatchlistController {
         this.watchlistService = watchlistService;
     }
 
+    // =========================================================
+    // GET WATCHLIST
+    // =========================================================
+
     @GetMapping
     public List<WatchlistResponse> getWatchlist(
             Authentication authentication
     ) {
 
-        User user = (User) authentication.getPrincipal();
+        User user =
+                (User) authentication.getPrincipal();
 
         return watchlistService.getWatchlist(
                 user.getEmail()
         );
     }
 
+    // =========================================================
+    // ADD TO WATCHLIST
+    // =========================================================
+
     @PostMapping("/{symbol}")
     @ResponseStatus(HttpStatus.CREATED)
     public WatchlistResponse addToWatchlist(
             @PathVariable String symbol,
+            @RequestParam String exchange,
             Authentication authentication
     ) {
 
-        User user = (User) authentication.getPrincipal();
+        User user =
+                (User) authentication.getPrincipal();
 
         return watchlistService.addToWatchlist(
                 user.getEmail(),
-                symbol
+                symbol,
+                exchange
         );
     }
+
+    // =========================================================
+    // REMOVE FROM WATCHLIST
+    // =========================================================
 
     @DeleteMapping("/{symbol}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void removeFromWatchlist(
             @PathVariable String symbol,
+            @RequestParam String exchange,
             Authentication authentication
     ) {
 
-        User user = (User) authentication.getPrincipal();
+        User user =
+                (User) authentication.getPrincipal();
 
         watchlistService.removeFromWatchlist(
                 user.getEmail(),
-                symbol
+                symbol,
+                exchange
         );
     }
 }

@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 
 public class StockResponse {
 
+    private String currency;
     private Long id;
     private String symbol;
     private String companyName;
@@ -28,6 +29,50 @@ public class StockResponse {
     public StockResponse() {
     }
 
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public StockResponse(
+            Long id,
+            String symbol,
+            String companyName,
+            String currency,
+            BigDecimal currentPrice,
+            BigDecimal currentPriceInr,
+            BigDecimal exchangeRateToInr,
+            BigDecimal openingPrice,
+            BigDecimal previousClose,
+            BigDecimal dayHigh,
+            BigDecimal dayLow,
+            BigDecimal priceChange,
+            BigDecimal changePercentage,
+            String sector,
+            String exchange,
+            StockStatus status
+    ) {
+        this.id = id;
+        this.symbol = symbol;
+        this.companyName = companyName;
+        this.currency = currency;
+        this.currentPrice = currentPrice;
+        this.currentPriceInr = currentPriceInr;
+        this.exchangeRateToInr = exchangeRateToInr;
+        this.openingPrice = openingPrice;
+        this.previousClose = previousClose;
+        this.dayHigh = dayHigh;
+        this.dayLow = dayLow;
+        this.priceChange = priceChange;
+        this.changePercentage = changePercentage;
+        this.sector = sector;
+        this.exchange = exchange;
+        this.status = status;
+    }
+
     public StockResponse(
             Long id,
             String symbol,
@@ -45,21 +90,24 @@ public class StockResponse {
             String exchange,
             StockStatus status
     ) {
-        this.id = id;
-        this.symbol = symbol;
-        this.companyName = companyName;
-        this.currentPrice = currentPrice;
-        this.currentPriceInr = currentPriceInr;
-        this.exchangeRateToInr = exchangeRateToInr;
-        this.openingPrice = openingPrice;
-        this.previousClose = previousClose;
-        this.dayHigh = dayHigh;
-        this.dayLow = dayLow;
-        this.priceChange = priceChange;
-        this.changePercentage = changePercentage;
-        this.sector = sector;
-        this.exchange = exchange;
-        this.status = status;
+        this(
+                id,
+                symbol,
+                companyName,
+                null,
+                currentPrice,
+                currentPriceInr,
+                exchangeRateToInr,
+                openingPrice,
+                previousClose,
+                dayHigh,
+                dayLow,
+                priceChange,
+                changePercentage,
+                sector,
+                exchange,
+                status
+        );
     }
 
     public Long getId() {

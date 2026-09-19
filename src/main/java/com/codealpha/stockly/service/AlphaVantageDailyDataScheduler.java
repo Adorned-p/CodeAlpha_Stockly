@@ -1,6 +1,7 @@
 package com.codealpha.stockly.service;
 
 import com.codealpha.stockly.dto.AlphaVantageDailyResponse;
+import com.codealpha.stockly.dto.ExternalQuoteResponse;
 import com.codealpha.stockly.entity.Instrument;
 import com.codealpha.stockly.entity.MarketQuote;
 import com.codealpha.stockly.entity.Stock;
@@ -17,10 +18,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
+import java.util.List;
 
 @Service
 public class AlphaVantageDailyDataScheduler {
@@ -29,12 +28,16 @@ public class AlphaVantageDailyDataScheduler {
     private final MarketQuoteRepository marketQuoteRepository;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
     private final StockRepository stockRepository;
+    private final MarketDataProviderService marketDataProviderService;
     private final AlphaVantageMarketDataClient alphaVantageMarketDataClient;
 
     private int currentInstrumentIndex = 0;
 
     /*
-     * Alpha Vantage free tier safety limit.
+     * Alpha Vantage is still used for historical backfill.
+     *
+     * We keep the existing safety limit for historical
+     * Alpha Vantage requests.
      */
     private static final int MAX_DAILY_REQUESTS = 20;
 
@@ -47,8 +50,10 @@ public class AlphaVantageDailyDataScheduler {
             MarketQuoteRepository marketQuoteRepository,
             StockPriceHistoryRepository stockPriceHistoryRepository,
             StockRepository stockRepository,
+            MarketDataProviderService marketDataProviderService,
             AlphaVantageMarketDataClient alphaVantageMarketDataClient
     ) {
+
         this.instrumentRepository =
                 instrumentRepository;
 
@@ -61,52 +66,45 @@ public class AlphaVantageDailyDataScheduler {
         this.stockRepository =
                 stockRepository;
 
+        this.marketDataProviderService =
+                marketDataProviderService;
+
         this.alphaVantageMarketDataClient =
                 alphaVantageMarketDataClient;
     }
 
     // =========================================================
-    // DAILY MARKET DATA
+    // MARKET DATA REFRESH
     // =========================================================
 
     /*
      * Run once every hour.
      *
-     * Only ONE instrument is requested per execution.
+     * Only ONE active instrument is requested per execution.
+     *
+     * The selected provider stored inside Instrument
+     * gets the first attempt.
+     *
+     * If that provider fails, MarketDataProviderService
+     * may use a fallback provider.
      */
-    @Scheduled(fixedRate = 3600000)
     @Transactional
     public void refreshDailyMarketData() {
 
         resetDailyCounterIfNecessary();
 
-        if (dailyRequestCount >= MAX_DAILY_REQUESTS) {
-
-            System.out.println(
-                    "Alpha Vantage daily request limit reached. "
-                            + "Skipping until tomorrow."
-            );
-
-            return;
-        }
-
         List<Instrument> instruments =
                 instrumentRepository
                         .findByActiveTrue()
                         .stream()
-                        .filter(instrument ->
-                                instrument.getAlphaVantageSymbol() != null
-                                        &&
-                                        !instrument
-                                                .getAlphaVantageSymbol()
-                                                .isBlank()
-                        )
+                        .filter(this::hasUsableProvider)
                         .toList();
 
         if (instruments.isEmpty()) {
 
             System.out.println(
-                    "No active instruments with Alpha Vantage symbols."
+                    "No active instruments with usable "
+                            + "market-data provider mappings."
             );
 
             return;
@@ -124,39 +122,48 @@ public class AlphaVantageDailyDataScheduler {
 
         currentInstrumentIndex++;
 
-        String alphaVantageSymbol =
-                instrument.getAlphaVantageSymbol();
-
         try {
 
-            dailyRequestCount++;
-
             System.out.println(
-                    "Alpha Vantage daily request "
-                            + dailyRequestCount
-                            + "/"
-                            + MAX_DAILY_REQUESTS
-                            + " for "
+                    "Refreshing market data for "
                             + instrument.getSymbol()
-                            + " -> "
-                            + alphaVantageSymbol
+                            + " ("
+                            + instrument.getExchange()
+                            + ") using selected provider: "
+                            + instrument.getMarketDataProvider()
             );
 
-            AlphaVantageDailyResponse response =
-                    alphaVantageMarketDataClient
-                            .getDailyHistory(
-                                    alphaVantageSymbol
-                            );
+            /*
+             * MarketDataProviderService decides which provider
+             * to use and handles fallback providers.
+             */
+            ExternalQuoteResponse quote =
+                    marketDataProviderService.getQuote(
+                            instrument
+                    );
 
-            processDailyData(
+            if (!isValidQuote(quote)) {
+
+                System.err.println(
+                        "No valid market data received for "
+                                + instrument.getSymbol()
+                                + " ("
+                                + instrument.getExchange()
+                                + ")"
+                );
+
+                return;
+            }
+
+            processQuote(
                     instrument,
-                    response
+                    quote
             );
 
         } catch (Exception exception) {
 
             System.err.println(
-                    "Alpha Vantage daily update failed for "
+                    "Market data update failed for "
                             + instrument.getSymbol()
                             + ": "
                             + exception.getMessage()
@@ -165,108 +172,46 @@ public class AlphaVantageDailyDataScheduler {
     }
 
     // =========================================================
-    // PROCESS DAILY DATA
+    // PROCESS QUOTE
     // =========================================================
 
-    protected void processDailyData(
+    protected void processQuote(
             Instrument instrument,
-            AlphaVantageDailyResponse response
+            ExternalQuoteResponse quote
     ) {
 
-        if (response == null ||
-                response.getTimeSeries() == null ||
-                response.getTimeSeries().isEmpty()) {
+        if (!isValidQuote(quote)) {
 
             System.err.println(
-                    "No daily data returned for "
+                    "Invalid quote for "
                             + instrument.getSymbol()
             );
 
-            return;
-        }
-
-        Map<String, AlphaVantageDailyResponse.DailyData>
-                timeSeries =
-                response.getTimeSeries();
-
-        /*
-         * Sort dates newest -> oldest.
-         */
-        List<String> dates =
-                new ArrayList<>(
-                        timeSeries.keySet()
-                );
-
-        dates.sort(
-                Comparator.reverseOrder()
-        );
-
-        String latestDateText =
-                dates.get(0);
-
-        AlphaVantageDailyResponse.DailyData latest =
-                timeSeries.get(
-                        latestDateText
-                );
-
-        if (latest == null) {
             return;
         }
 
         BigDecimal close =
-                toBigDecimal(
-                        latest.getClose()
-                );
+                quote.getClose();
 
         BigDecimal open =
-                toBigDecimal(
-                        latest.getOpen()
-                );
+                quote.getOpen() != null
+                        ? quote.getOpen()
+                        : close;
+
+        BigDecimal previousClose =
+                quote.getPreviousClose() != null
+                        ? quote.getPreviousClose()
+                        : close;
 
         BigDecimal high =
-                toBigDecimal(
-                        latest.getHigh()
-                );
+                quote.getHigh() != null
+                        ? quote.getHigh()
+                        : close;
 
         BigDecimal low =
-                toBigDecimal(
-                        latest.getLow()
-                );
-
-        if (close == null ||
-                close.compareTo(
-                        BigDecimal.ZERO
-                ) <= 0) {
-
-            System.err.println(
-                    "Invalid Alpha Vantage close price for "
-                            + instrument.getSymbol()
-            );
-
-            return;
-        }
-
-        // =====================================================
-        // PREVIOUS TRADING DAY CLOSE
-        // =====================================================
-
-        BigDecimal previousClose = null;
-
-        if (dates.size() > 1) {
-
-            AlphaVantageDailyResponse.DailyData previous =
-                    timeSeries.get(
-                            dates.get(1)
-                    );
-
-            if (previous != null) {
-
-                previousClose =
-                        toBigDecimal(
-                                previous.getClose()
-                        );
-            }
-        }
+                quote.getLow() != null
+                        ? quote.getLow()
+                        : close;
 
         // =====================================================
         // UPDATE INSTRUMENT
@@ -276,67 +221,54 @@ public class AlphaVantageDailyDataScheduler {
                 close
         );
 
+        instrument.setMarketDataUpdatedAt(
+                LocalDateTime.now()
+        );
+
         instrumentRepository.save(
                 instrument
         );
+
+        // =====================================================
+        // UPDATE STOCK
+        // =====================================================
 
         Stock stock =
                 instrument.getStock();
 
         if (stock != null) {
 
-            // =================================================
-            // UPDATE STOCK
-            // =================================================
-
             stock.setCurrentPrice(
                     close
             );
 
-            if (open != null) {
+            stock.setOpeningPrice(
+                    open
+            );
 
-                stock.setOpeningPrice(
-                        open
-                );
-            }
+            stock.setPreviousClose(
+                    previousClose
+            );
 
-            if (previousClose != null) {
+            stock.setDayHigh(
+                    high
+            );
 
-                stock.setPreviousClose(
-                        previousClose
-                );
-            }
-
-            if (high != null) {
-
-                stock.setDayHigh(
-                        high
-                );
-            }
-
-            if (low != null) {
-
-                stock.setDayLow(
-                        low
-                );
-            }
+            stock.setDayLow(
+                    low
+            );
 
             stockRepository.save(
                     stock
             );
 
             // =================================================
-            // SAVE LATEST DAILY HISTORY
+            // SAVE DAILY HISTORY
             // =================================================
-
-            LocalDate latestTradingDate =
-                    LocalDate.parse(
-                            latestDateText
-                    );
 
             LocalDateTime recordedAt =
                     LocalDateTime.of(
-                            latestTradingDate,
+                            LocalDate.now(),
                             LocalTime.MAX
                     );
 
@@ -351,7 +283,7 @@ public class AlphaVantageDailyDataScheduler {
         // UPDATE MARKET QUOTE
         // =====================================================
 
-        MarketQuote quote =
+        MarketQuote marketQuote =
                 marketQuoteRepository
                         .findByInstrument(
                                 instrument
@@ -369,44 +301,51 @@ public class AlphaVantageDailyDataScheduler {
                         });
 
         /*
-         * Alpha Vantage daily data doesn't provide
-         * a real bid/ask feed.
-         *
-         * Therefore use EOD close internally.
+         * If the external provider does not provide bid/ask,
+         * use the latest close as the internal simulated
+         * bid/ask value.
          */
-        quote.setBidPrice(
+        marketQuote.setBidPrice(
                 close
         );
 
-        quote.setAskPrice(
+        marketQuote.setAskPrice(
                 close
         );
 
-        quote.setLastPrice(
+        marketQuote.setLastPrice(
                 close
         );
 
-        quote.setUpdatedAt(
-                LocalDateTime.of(
-                        LocalDate.parse(
-                                latestDateText
-                        ),
-                        LocalTime.MAX
-                )
+        marketQuote.setUpdatedAt(
+                LocalDateTime.now()
         );
 
         marketQuoteRepository.save(
-                quote
+                marketQuote
         );
 
+        // =====================================================
+        // ACTUAL PROVIDER LOG
+        // =====================================================
+
+        String actualProvider =
+                quote.getProvider();
+
+        if (actualProvider == null ||
+                actualProvider.isBlank()) {
+
+            actualProvider =
+                    "UNKNOWN";
+        }
+
         System.out.println(
-                "Alpha Vantage daily data updated: "
+                "Market data updated successfully: "
                         + instrument.getSymbol()
                         + " = "
                         + close
-                        + " ("
-                        + latestDateText
-                        + ")"
+                        + " using actual provider: "
+                        + actualProvider
         );
     }
 
@@ -415,12 +354,8 @@ public class AlphaVantageDailyDataScheduler {
     // =========================================================
 
     /*
-     * Downloads the available Alpha Vantage daily history
-     * for every eligible instrument.
-     *
-     * Each instrument requires only ONE API request.
-     *
-     * The existing daily request limit is respected.
+     * Historical data remains explicitly handled by
+     * Alpha Vantage for now.
      */
     @Transactional
     public void backfillDailyHistory() {
@@ -453,8 +388,8 @@ public class AlphaVantageDailyDataScheduler {
         if (instruments.isEmpty()) {
 
             System.out.println(
-                    "No active instruments with Alpha Vantage symbols "
-                            + "available for historical backfill."
+                    "No active instruments with Alpha Vantage "
+                            + "symbols available for historical backfill."
             );
 
             return;
@@ -464,9 +399,6 @@ public class AlphaVantageDailyDataScheduler {
 
         for (Instrument instrument : instruments) {
 
-            /*
-             * Never exceed our daily safety limit.
-             */
             if (dailyRequestCount >= MAX_DAILY_REQUESTS) {
 
                 System.out.println(
@@ -542,11 +474,6 @@ public class AlphaVantageDailyDataScheduler {
     // PROCESS HISTORICAL DATA
     // =========================================================
 
-    /*
-     * Process ALL daily records returned by Alpha Vantage.
-     *
-     * This method is used only by the historical backfill.
-     */
     private int processHistoricalData(
             Instrument instrument,
             AlphaVantageDailyResponse response
@@ -641,9 +568,6 @@ public class AlphaVantageDailyDataScheduler {
                             LocalTime.MAX
                     );
 
-            /*
-             * Don't create duplicate history records.
-             */
             if (stockPriceHistoryRepository
                     .existsByStockAndRecordedAt(
                             stock,
@@ -717,6 +641,84 @@ public class AlphaVantageDailyDataScheduler {
         stockPriceHistoryRepository.save(
                 dailyHistory
         );
+    }
+
+    // =========================================================
+    // CHECK PROVIDER MAPPING
+    // =========================================================
+
+    private boolean hasUsableProvider(
+            Instrument instrument
+    ) {
+
+        if (instrument == null) {
+            return false;
+        }
+
+        String provider =
+                instrument.getMarketDataProvider();
+
+        if (provider == null ||
+                provider.isBlank()) {
+
+            return false;
+        }
+
+        String normalizedProvider =
+                provider.trim().toUpperCase();
+
+        switch (normalizedProvider) {
+
+            case "EODHD":
+
+                return instrument.getEodhdSymbol() != null
+                        && !instrument
+                        .getEodhdSymbol()
+                        .isBlank();
+
+            case "TWELVE_DATA":
+
+                return instrument.getTwelveDataSymbol() != null
+                        && !instrument
+                        .getTwelveDataSymbol()
+                        .isBlank();
+
+            case "ALPHA_VANTAGE":
+
+                return instrument.getAlphaVantageSymbol() != null
+                        && !instrument
+                        .getAlphaVantageSymbol()
+                        .isBlank();
+
+            case "INDIAN":
+            case "INDIAN_MARKET":
+            case "INDIAN_MARKET_DATA":
+
+                return instrument.getSymbol() != null
+                        && !instrument.getSymbol().isBlank()
+                        && instrument.getExchange() != null
+                        && !instrument.getExchange().isBlank();
+
+            default:
+
+                return false;
+        }
+    }
+
+    // =========================================================
+    // QUOTE VALIDATION
+    // =========================================================
+
+    private boolean isValidQuote(
+            ExternalQuoteResponse response
+    ) {
+
+        return response != null
+                && response.getClose() != null
+                && response.getClose()
+                .compareTo(
+                        BigDecimal.ZERO
+                ) > 0;
     }
 
     // =========================================================

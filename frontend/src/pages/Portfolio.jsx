@@ -48,6 +48,16 @@ function Portfolio() {
     });
   };
 
+  const openStockDetails = (symbol, exchange) => {
+    if (!symbol || !exchange) {
+      return;
+    }
+
+    window.location.href =
+      `/stocks/${encodeURIComponent(symbol)}` +
+      `?exchange=${encodeURIComponent(exchange)}`;
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -312,10 +322,12 @@ function Portfolio() {
                 return (
                   <div
                     className="holding-row"
-                    key={holding.symbol}
+                    key={`${holding.symbol}-${holding.exchange}`}
                     onClick={() =>
-                      window.location.href =
-                        `/stocks/${holding.symbol}`
+                      openStockDetails(
+                        holding.symbol,
+                        holding.exchange
+                      )
                     }
                     style={{
                       cursor: "pointer",
@@ -331,6 +343,10 @@ function Portfolio() {
                       <span>
                         {holding.companyName}
                       </span>
+
+                      <small>
+                        {holding.exchange}
+                      </small>
 
                     </div>
 

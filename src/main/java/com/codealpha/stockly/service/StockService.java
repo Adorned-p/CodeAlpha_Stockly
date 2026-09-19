@@ -3,9 +3,9 @@ package com.codealpha.stockly.service;
 import com.codealpha.stockly.entity.Stock;
 import com.codealpha.stockly.entity.StockPriceHistory;
 import com.codealpha.stockly.entity.StockStatus;
+import com.codealpha.stockly.exception.ResourceNotFoundException;
 import com.codealpha.stockly.repository.StockPriceHistoryRepository;
 import com.codealpha.stockly.repository.StockRepository;
-import com.codealpha.stockly.exception.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,46 +40,43 @@ public class StockService {
         Stock stock =
                 getStockBySymbol(symbol);
 
-        if (price == null ||
-                price.compareTo(BigDecimal.ZERO) <= 0) {
+        validatePrice(price);
 
-            throw new IllegalArgumentException(
-                    "Stock price must be greater than zero"
-            );
-        }
+        updateStockPriceFields(stock, price);
 
-        // Update current price
-        stock.setCurrentPrice(price);
-
-        // Update day high
-        if (stock.getDayHigh() == null ||
-                price.compareTo(stock.getDayHigh()) > 0) {
-
-            stock.setDayHigh(price);
-        }
-
-        // Update day low
-        if (stock.getDayLow() == null ||
-                price.compareTo(stock.getDayLow()) < 0) {
-
-            stock.setDayLow(price);
-        }
-
-        // Save updated stock
         Stock savedStock =
                 stockRepository.save(stock);
 
-        // Record price history
-        StockPriceHistory history =
-                new StockPriceHistory();
+        savePriceHistory(savedStock, price);
 
-        history.setStock(savedStock);
-        history.setPrice(price);
-        history.setRecordedAt(
-                LocalDateTime.now()
-        );
+        return savedStock;
+    }
 
-        priceHistoryRepository.save(history);
+    // =========================================================
+    // UPDATE PRICE BY SYMBOL + EXCHANGE
+    // =========================================================
+
+    @Transactional
+    public Stock updatePrice(
+            String symbol,
+            String exchange,
+            BigDecimal price
+    ) {
+
+        Stock stock =
+                getStockBySymbolAndExchange(
+                        symbol,
+                        exchange
+                );
+
+        validatePrice(price);
+
+        updateStockPriceFields(stock, price);
+
+        Stock savedStock =
+                stockRepository.save(stock);
+
+        savePriceHistory(savedStock, price);
 
         return savedStock;
     }
@@ -96,18 +93,73 @@ public class StockService {
     // =========================================================
     // GET STOCK BY SYMBOL
     // =========================================================
+    /*
+     * Kept for backward compatibility with existing services.
+     *
+     * New exchange-aware code should use:
+     * getStockBySymbolAndExchange(symbol, exchange)
+     */
 
     public Stock getStockBySymbol(
             String symbol
     ) {
 
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Stock symbol is required"
+            );
+        }
+
+        String normalizedSymbol =
+                symbol.trim().toUpperCase();
+
         return stockRepository
-                .findBySymbol(
-                        symbol.toUpperCase()
+                .findBySymbol(normalizedSymbol)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Stock not found: " + normalizedSymbol
+                        )
+                );
+    }
+
+    // =========================================================
+    // GET STOCK BY SYMBOL + EXCHANGE
+    // =========================================================
+
+    public Stock getStockBySymbolAndExchange(
+            String symbol,
+            String exchange
+    ) {
+
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Stock symbol is required"
+            );
+        }
+
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Stock exchange is required"
+            );
+        }
+
+        String normalizedSymbol =
+                symbol.trim().toUpperCase();
+
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
+        return stockRepository
+                .findBySymbolAndExchange(
+                        normalizedSymbol,
+                        normalizedExchange
                 )
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
-                                "Stock not found: " + symbol
+                                "Stock not found: "
+                                        + normalizedSymbol
+                                        + " on "
+                                        + normalizedExchange
                         )
                 );
     }
@@ -121,19 +173,54 @@ public class StockService {
             Stock stock
     ) {
 
+        if (stock == null) {
+            throw new IllegalArgumentException(
+                    "Stock is required"
+            );
+        }
+
+        if (stock.getSymbol() == null ||
+                stock.getSymbol().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Stock symbol is required"
+            );
+        }
+
+        if (stock.getExchange() == null ||
+                stock.getExchange().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Stock exchange is required"
+            );
+        }
+
         String symbol =
                 stock.getSymbol()
+                        .trim()
+                        .toUpperCase();
+
+        String exchange =
+                stock.getExchange()
+                        .trim()
                         .toUpperCase();
 
         if (stockRepository
-                .existsBySymbol(symbol)) {
+                .existsBySymbolAndExchange(
+                        symbol,
+                        exchange
+                )) {
 
             throw new IllegalArgumentException(
-                    "Stock already exists: " + symbol
+                    "Stock already exists: "
+                            + symbol
+                            + " on "
+                            + exchange
             );
         }
 
         stock.setSymbol(symbol);
+        stock.setExchange(exchange);
 
         if (stock.getStatus() == null) {
 
@@ -148,18 +235,10 @@ public class StockService {
         // Create initial price-history entry
         if (savedStock.getCurrentPrice() != null) {
 
-            StockPriceHistory history =
-                    new StockPriceHistory();
-
-            history.setStock(savedStock);
-            history.setPrice(
+            savePriceHistory(
+                    savedStock,
                     savedStock.getCurrentPrice()
             );
-            history.setRecordedAt(
-                    LocalDateTime.now()
-            );
-
-            priceHistoryRepository.save(history);
         }
 
         return savedStock;
@@ -185,11 +264,111 @@ public class StockService {
         stock.setCompanyName(companyName);
         stock.setCurrentPrice(currentPrice);
         stock.setSector(sector);
-        stock.setExchange(
-                exchange.toUpperCase()
-        );
+
+        if (exchange != null &&
+                !exchange.isBlank()) {
+
+            stock.setExchange(
+                    exchange.trim().toUpperCase()
+            );
+        }
+
         stock.setStatus(status);
 
         return stockRepository.save(stock);
+    }
+
+    // =========================================================
+    // UPDATE STOCK BY SYMBOL + EXCHANGE
+    // =========================================================
+
+    @Transactional
+    public Stock updateStock(
+            String symbol,
+            String exchange,
+            String companyName,
+            BigDecimal currentPrice,
+            String sector,
+            StockStatus status
+    ) {
+
+        Stock stock =
+                getStockBySymbolAndExchange(
+                        symbol,
+                        exchange
+                );
+
+        stock.setCompanyName(companyName);
+        stock.setCurrentPrice(currentPrice);
+        stock.setSector(sector);
+        stock.setStatus(status);
+
+        return stockRepository.save(stock);
+    }
+
+    // =========================================================
+    // VALIDATE PRICE
+    // =========================================================
+
+    private void validatePrice(
+            BigDecimal price
+    ) {
+
+        if (price == null ||
+                price.compareTo(BigDecimal.ZERO) <= 0) {
+
+            throw new IllegalArgumentException(
+                    "Stock price must be greater than zero"
+            );
+        }
+    }
+
+    // =========================================================
+    // UPDATE PRICE FIELDS
+    // =========================================================
+
+    private void updateStockPriceFields(
+            Stock stock,
+            BigDecimal price
+    ) {
+
+        stock.setCurrentPrice(price);
+
+        if (stock.getDayHigh() == null ||
+                price.compareTo(
+                        stock.getDayHigh()
+                ) > 0) {
+
+            stock.setDayHigh(price);
+        }
+
+        if (stock.getDayLow() == null ||
+                price.compareTo(
+                        stock.getDayLow()
+                ) < 0) {
+
+            stock.setDayLow(price);
+        }
+    }
+
+    // =========================================================
+    // SAVE PRICE HISTORY
+    // =========================================================
+
+    private void savePriceHistory(
+            Stock stock,
+            BigDecimal price
+    ) {
+
+        StockPriceHistory history =
+                new StockPriceHistory();
+
+        history.setStock(stock);
+        history.setPrice(price);
+        history.setRecordedAt(
+                LocalDateTime.now()
+        );
+
+        priceHistoryRepository.save(history);
     }
 }

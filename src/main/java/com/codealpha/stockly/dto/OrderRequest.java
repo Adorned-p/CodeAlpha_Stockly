@@ -13,6 +13,9 @@ public class OrderRequest {
     @NotBlank(message = "Symbol is required")
     private String symbol;
 
+    @NotBlank(message = "Exchange is required")
+    private String exchange;
+
     @NotNull(message = "Order side is required")
     private OrderSide side;
 
@@ -36,6 +39,14 @@ public class OrderRequest {
 
     public void setSymbol(String symbol) {
         this.symbol = symbol;
+    }
+
+    public String getExchange() {
+        return exchange;
+    }
+
+    public void setExchange(String exchange) {
+        this.exchange = exchange;
     }
 
     public OrderSide getSide() {

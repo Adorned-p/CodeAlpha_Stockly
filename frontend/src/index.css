@@ -2354,6 +2354,18 @@ svg {
   margin-bottom: 14px;
 }
 
+.trade-field > input,
+.trade-field > select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #dfe5ea;
+  border-radius: 10px;
+  background: #ffffff;
+  font-size: 14px;
+  box-sizing: border-box;
+  outline: none;
+}
+
 .trade-field label {
   display: block;
 

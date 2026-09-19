@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 public class HoldingResponse {
 
     private String symbol;
+    private String exchange;
     private String companyName;
     private Integer quantity;
 
@@ -31,6 +32,7 @@ public class HoldingResponse {
 
     public HoldingResponse(
             String symbol,
+            String exchange,
             String companyName,
             Integer quantity,
 
@@ -50,6 +52,7 @@ public class HoldingResponse {
             BigDecimal profitLossPercentage
     ) {
         this.symbol = symbol;
+        this.exchange = exchange;
         this.companyName = companyName;
         this.quantity = quantity;
 
@@ -71,6 +74,10 @@ public class HoldingResponse {
 
     public String getSymbol() {
         return symbol;
+    }
+
+    public String getExchange() {
+        return exchange;
     }
 
     public String getCompanyName() {

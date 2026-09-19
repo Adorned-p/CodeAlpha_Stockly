@@ -8,6 +8,7 @@ import org.springframework.web.client.RestClient;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -15,15 +16,47 @@ public class CurrencyConversionService {
 
     private static final String BASE_CURRENCY = "INR";
 
+    /*
+     * Currencies that STOCKLY currently supports.
+     *
+     * We can add more later without changing
+     * the conversion logic.
+     */
+    private static final Set<String> SUPPORTED_CURRENCIES = Set.of(
+            "USD",
+            "EUR",
+            "GBP",
+            "JPY",
+            "CHF",
+            "CAD",
+            "AUD",
+            "HKD",
+            "SGD",
+            "KRW",
+            "BRL",
+            "ZAR",
+            "AED"
+    );
+
     private final ExternalMarketDataClient externalMarketDataClient;
 
     /*
      * Free fallback exchange-rate provider.
      *
-     * No API key is required.
+     * No API key required.
      */
     private final RestClient fallbackRestClient;
 
+    /*
+     * Cached exchange rates.
+     *
+     * Example:
+     *
+     * USD -> 87.50
+     * EUR -> 102.20
+     * GBP -> 118.40
+     * JPY -> 0.58
+     */
     private final Map<String, BigDecimal> exchangeRates =
             new ConcurrentHashMap<>();
 
@@ -43,7 +76,7 @@ public class CurrencyConversionService {
          * INR -> INR
          */
         exchangeRates.put(
-                "INR",
+                BASE_CURRENCY,
                 BigDecimal.ONE
         );
     }
@@ -61,19 +94,11 @@ public class CurrencyConversionService {
             return null;
         }
 
-        if (currency == null ||
-                currency.isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "Currency is required"
-            );
-        }
-
         String normalizedCurrency =
-                currency.trim().toUpperCase();
+                normalizeCurrency(currency);
 
         /*
-         * No conversion required.
+         * INR requires no conversion.
          */
         if (BASE_CURRENCY.equals(
                 normalizedCurrency
@@ -85,22 +110,23 @@ public class CurrencyConversionService {
             );
         }
 
+        /*
+         * First use the cached rate.
+         */
         BigDecimal rate =
                 exchangeRates.get(
                         normalizedCurrency
                 );
 
         /*
-         * USD is currently the only foreign
-         * currency used by Stockly.
-         *
-         * Try to refresh the rate when it is
-         * not already available.
+         * If the rate isn't cached yet,
+         * fetch it.
          */
-        if (rate == null &&
-                "USD".equals(normalizedCurrency)) {
+        if (rate == null) {
 
-            refreshUsdInrRate();
+            refreshRate(
+                    normalizedCurrency
+            );
 
             rate =
                     exchangeRates.get(
@@ -109,9 +135,9 @@ public class CurrencyConversionService {
         }
 
         /*
-         * Never allow a temporary exchange-rate
-         * provider failure to crash /api/stocks
-         * or /api/portfolio.
+         * Never crash the stock/portfolio
+         * endpoint because FX data temporarily
+         * failed.
          */
         if (rate == null) {
 
@@ -132,7 +158,7 @@ public class CurrencyConversionService {
     }
 
     // =========================================================
-    // GET RATE
+    // GET EXCHANGE RATE
     // =========================================================
 
     public BigDecimal getExchangeRate(
@@ -145,30 +171,83 @@ public class CurrencyConversionService {
             return null;
         }
 
-        return exchangeRates.get(
-                currency.trim().toUpperCase()
-        );
+        String normalizedCurrency =
+                currency.trim().toUpperCase();
+
+        /*
+         * INR -> INR
+         */
+        if (BASE_CURRENCY.equals(
+                normalizedCurrency
+        )) {
+
+            return BigDecimal.ONE;
+        }
+
+        BigDecimal rate =
+                exchangeRates.get(
+                        normalizedCurrency
+                );
+
+        /*
+         * Fetch on demand if this currency
+         * hasn't been loaded yet.
+         */
+        if (rate == null) {
+
+            refreshRate(
+                    normalizedCurrency
+            );
+
+            rate =
+                    exchangeRates.get(
+                            normalizedCurrency
+                    );
+        }
+
+        return rate;
     }
 
     // =========================================================
-    // REFRESH USD/INR
+    // REFRESH ONE CURRENCY
     // =========================================================
 
-    /*
-     * Refresh every 15 minutes.
-     *
-     * Primary:
-     * Twelve Data
-     *
-     * Fallback:
-     * Frankfurter
-     *
-     * USD/INR is shared by all USD-denominated
-     * instruments, so we do NOT make one request
-     * per stock.
-     */
-    @Scheduled(fixedRate = 900000)
-    public void refreshUsdInrRate() {
+    private void refreshRate(
+            String currency
+    ) {
+
+        if (currency == null ||
+                currency.isBlank()) {
+
+            return;
+        }
+
+        String normalizedCurrency =
+                currency.trim().toUpperCase();
+
+        if (BASE_CURRENCY.equals(
+                normalizedCurrency
+        )) {
+
+            exchangeRates.put(
+                    BASE_CURRENCY,
+                    BigDecimal.ONE
+            );
+
+            return;
+        }
+
+        if (!SUPPORTED_CURRENCIES.contains(
+                normalizedCurrency
+        )) {
+
+            System.err.println(
+                    "Unsupported currency for INR conversion: "
+                            + normalizedCurrency
+            );
+
+            return;
+        }
 
         /*
          * =====================================================
@@ -181,8 +260,8 @@ public class CurrencyConversionService {
             ExternalExchangeRateResponse response =
                     externalMarketDataClient
                             .getExchangeRate(
-                                    "USD",
-                                    "INR"
+                                    normalizedCurrency,
+                                    BASE_CURRENCY
                             );
 
             if (response != null &&
@@ -193,12 +272,13 @@ public class CurrencyConversionService {
                             ) > 0) {
 
                 exchangeRates.put(
-                        "USD",
+                        normalizedCurrency,
                         response.getRate()
                 );
 
                 System.out.println(
-                        "USD/INR exchange rate updated "
+                        normalizedCurrency
+                                + "/INR exchange rate updated "
                                 + "from Twelve Data: "
                                 + response.getRate()
                 );
@@ -208,13 +288,16 @@ public class CurrencyConversionService {
 
             System.err.println(
                     "Twelve Data returned no valid "
-                            + "USD/INR rate. Trying fallback."
+                            + normalizedCurrency
+                            + "/INR rate. Trying fallback."
             );
 
         } catch (Exception exception) {
 
             System.err.println(
-                    "Twelve Data USD/INR failed: "
+                    "Twelve Data "
+                            + normalizedCurrency
+                            + "/INR failed: "
                             + exception.getMessage()
             );
         }
@@ -232,9 +315,12 @@ public class CurrencyConversionService {
                             .uri(uriBuilder ->
                                     uriBuilder
                                             .path(
-                                                    "/v2/rate/USD/INR"
+                                                    "/v2/rate/{base}/{quote}"
                                             )
-                                            .build()
+                                            .build(
+                                                    normalizedCurrency,
+                                                    BASE_CURRENCY
+                                            )
                             )
                             .retrieve()
                             .body(Map.class);
@@ -243,7 +329,8 @@ public class CurrencyConversionService {
 
                 System.err.println(
                         "Frankfurter returned an empty "
-                                + "USD/INR response."
+                                + normalizedCurrency
+                                + "/INR response."
                 );
 
                 return;
@@ -255,7 +342,9 @@ public class CurrencyConversionService {
             if (rateValue == null) {
 
                 System.err.println(
-                        "Frankfurter returned no USD/INR rate."
+                        "Frankfurter returned no "
+                                + normalizedCurrency
+                                + "/INR rate."
                 );
 
                 return;
@@ -272,19 +361,21 @@ public class CurrencyConversionService {
 
                 System.err.println(
                         "Frankfurter returned an invalid "
-                                + "USD/INR rate."
+                                + normalizedCurrency
+                                + "/INR rate."
                 );
 
                 return;
             }
 
             exchangeRates.put(
-                    "USD",
+                    normalizedCurrency,
                     rate
             );
 
             System.out.println(
-                    "USD/INR exchange rate updated "
+                    normalizedCurrency
+                            + "/INR exchange rate updated "
                             + "from Frankfurter fallback: "
                             + rate
             );
@@ -292,9 +383,62 @@ public class CurrencyConversionService {
         } catch (Exception exception) {
 
             System.err.println(
-                    "Frankfurter USD/INR fallback failed: "
+                    "Frankfurter "
+                            + normalizedCurrency
+                            + "/INR fallback failed: "
                             + exception.getMessage()
             );
         }
+    }
+
+    // =========================================================
+    // REFRESH CACHED RATES
+    // =========================================================
+
+    /*
+     * Refresh currencies that have already been requested.
+     *
+     * We intentionally DO NOT request every supported currency
+     * every 15 minutes.
+     *
+     * This prevents unnecessary API calls for currencies that
+     * STOCKLY isn't currently using.
+     */
+    @Scheduled(fixedRate = 900000)
+    public void refreshCachedRates() {
+
+        for (String currency :
+                exchangeRates.keySet()) {
+
+            if (BASE_CURRENCY.equals(
+                    currency
+            )) {
+
+                continue;
+            }
+
+            refreshRate(currency);
+        }
+    }
+
+    // =========================================================
+    // NORMALIZE CURRENCY
+    // =========================================================
+
+    private String normalizeCurrency(
+            String currency
+    ) {
+
+        if (currency == null ||
+                currency.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Currency is required"
+            );
+        }
+
+        return currency
+                .trim()
+                .toUpperCase();
     }
 }

@@ -9,6 +9,7 @@ public class TransactionResponse {
 
     private Long id;
     private String symbol;
+    private String exchange;
     private String companyName;
     private TransactionType type;
     private Integer quantity;
@@ -22,6 +23,7 @@ public class TransactionResponse {
     public TransactionResponse(
             Long id,
             String symbol,
+            String exchange,
             String companyName,
             TransactionType type,
             Integer quantity,
@@ -31,6 +33,7 @@ public class TransactionResponse {
     ) {
         this.id = id;
         this.symbol = symbol;
+        this.exchange = exchange;
         this.companyName = companyName;
         this.type = type;
         this.quantity = quantity;
@@ -45,6 +48,10 @@ public class TransactionResponse {
 
     public String getSymbol() {
         return symbol;
+    }
+
+    public String getExchange() {
+        return exchange;
     }
 
     public String getCompanyName() {

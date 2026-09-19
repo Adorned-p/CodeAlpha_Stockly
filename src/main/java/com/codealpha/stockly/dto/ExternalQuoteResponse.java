@@ -28,6 +28,17 @@ public class ExternalQuoteResponse {
 
     private Long volume;
 
+    /*
+     * The market-data provider that actually supplied this quote.
+     *
+     * Examples:
+     * EODHD
+     * TWELVE_DATA
+     * ALPHA_VANTAGE
+     * INDIAN_MARKET
+     */
+    private String provider;
+
     public ExternalQuoteResponse() {
     }
 
@@ -133,5 +144,13 @@ public class ExternalQuoteResponse {
 
     public void setVolume(Long volume) {
         this.volume = volume;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
     }
 }

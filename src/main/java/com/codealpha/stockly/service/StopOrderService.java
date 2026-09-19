@@ -1,5 +1,6 @@
 package com.codealpha.stockly.service;
 
+import com.codealpha.stockly.dto.MarketQuoteResponse;
 import com.codealpha.stockly.entity.Instrument;
 import com.codealpha.stockly.entity.Order;
 import com.codealpha.stockly.entity.OrderSide;
@@ -16,15 +17,18 @@ import java.util.List;
 @Service
 public class StopOrderService {
 
+    private final MarketQuoteService marketQuoteService;
     private final OrderRepository orderRepository;
     private final OrderService orderService;
 
     public StopOrderService(
             OrderRepository orderRepository,
-            OrderService orderService
+            OrderService orderService,
+            MarketQuoteService marketQuoteService
     ) {
         this.orderRepository = orderRepository;
         this.orderService = orderService;
+        this.marketQuoteService = marketQuoteService;
     }
 
     @Transactional
@@ -32,11 +36,10 @@ public class StopOrderService {
     public void checkStopOrders() {
 
         /*
-         * IMPORTANT:
          * Load the Instrument together with the Order.
          *
          * Order.instrument is LAZY, and this scheduled method
-         * needs the instrument's current price.
+         * needs the instrument's current market data.
          */
         List<Order> orders =
                 orderRepository.findAllWithInstrument();
@@ -69,6 +72,29 @@ public class StopOrderService {
                 continue;
             }
 
+            /*
+             * IMPORTANT:
+             *
+             * A STOP_LIMIT becomes an active limit order
+             * after its stop condition is triggered.
+             *
+             * It can remain OPEN while waiting for a matching
+             * seller/buyer.
+             *
+             * Therefore, do NOT process it again as a stop order.
+             */
+            if (order.isStopTriggered()) {
+
+                System.out.println(
+                        "[STOP CHECK] Order "
+                                + order.getId()
+                                + " already triggered. "
+                                + "Skipping stop check."
+                );
+
+                continue;
+            }
+
             Instrument instrument =
                     order.getInstrument();
 
@@ -83,8 +109,40 @@ public class StopOrderService {
                 continue;
             }
 
+            MarketQuoteResponse quote;
+
+            try {
+
+                /*
+                 * Use the exact Instrument rather than looking
+                 * up only by symbol.
+                 *
+                 * This is important because different exchanges
+                 * can contain the same symbol.
+                 */
+                quote =
+                        marketQuoteService.getQuote(
+                                instrument
+                        );
+
+            } catch (Exception e) {
+
+                System.err.println(
+                        "[STOP CHECK] Unable to get market quote for "
+                                + instrument.getSymbol()
+                                + ": "
+                                + e.getMessage()
+                );
+
+                continue;
+            }
+
+            if (quote == null) {
+                continue;
+            }
+
             BigDecimal currentPrice =
-                    instrument.getCurrentPrice();
+                    quote.getCurrentPriceInr();
 
             BigDecimal stopPrice =
                     order.getStopPrice();
@@ -98,9 +156,9 @@ public class StopOrderService {
                             + order.getSide()
                             + " | Type: "
                             + order.getType()
-                            + " | Current: "
+                            + " | Current INR: "
                             + currentPrice
-                            + " | Stop: "
+                            + " | Stop INR: "
                             + stopPrice
             );
 
@@ -155,6 +213,9 @@ public class StopOrderService {
                         ) <= 0;
             }
 
+            /*
+             * Stop condition has not been reached yet.
+             */
             if (!triggered) {
                 continue;
             }
@@ -170,12 +231,50 @@ public class StopOrderService {
 
             try {
 
+                /*
+                 * Delegate actual trigger/execution logic
+                 * to OrderService.
+                 */
                 orderService.triggerStopOrder(order);
 
-                System.out.println(
-                        "[STOP FILLED] Order "
-                                + order.getId()
-                );
+                /*
+                 * Reload the order so that we see the latest
+                 * status after trigger processing.
+                 */
+                Order updatedOrder =
+                        orderRepository
+                                .findById(order.getId())
+                                .orElse(order);
+
+                /*
+                 * A normal STOP order should execute immediately
+                 * at the current market price.
+                 */
+                if (updatedOrder.getStatus() == OrderStatus.FILLED) {
+
+                    System.out.println(
+                            "[STOP FILLED] Order "
+                                    + updatedOrder.getId()
+                    );
+
+                }
+
+                /*
+                 * A STOP_LIMIT order has been activated but
+                 * does not necessarily execute immediately.
+                 *
+                 * It is now an active limit order waiting for
+                 * the matching engine.
+                 */
+                else if (updatedOrder.isStopTriggered()) {
+
+                    System.out.println(
+                            "[STOP LIMIT ACTIVE] Order "
+                                    + updatedOrder.getId()
+                                    + " | Limit price: "
+                                    + updatedOrder.getLimitPrice()
+                    );
+                }
 
             } catch (Exception e) {
 

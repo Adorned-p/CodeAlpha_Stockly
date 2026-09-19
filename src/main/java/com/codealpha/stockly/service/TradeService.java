@@ -1,17 +1,17 @@
 package com.codealpha.stockly.service;
 
-import com.codealpha.stockly.entity.PortfolioSnapshot;
-import com.codealpha.stockly.repository.PortfolioSnapshotRepository;
-import com.codealpha.stockly.dto.SellRequest;
 import com.codealpha.stockly.dto.BuyRequest;
+import com.codealpha.stockly.dto.SellRequest;
 import com.codealpha.stockly.dto.TradeResponse;
 import com.codealpha.stockly.entity.Holding;
+import com.codealpha.stockly.entity.PortfolioSnapshot;
 import com.codealpha.stockly.entity.Stock;
 import com.codealpha.stockly.entity.StockStatus;
 import com.codealpha.stockly.entity.Transaction;
 import com.codealpha.stockly.entity.TransactionType;
 import com.codealpha.stockly.entity.User;
 import com.codealpha.stockly.repository.HoldingRepository;
+import com.codealpha.stockly.repository.PortfolioSnapshotRepository;
 import com.codealpha.stockly.repository.StockRepository;
 import com.codealpha.stockly.repository.TransactionRepository;
 import com.codealpha.stockly.repository.UserRepository;
@@ -19,6 +19,7 @@ import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 @Service
@@ -43,12 +44,9 @@ public class TradeService {
         this.stockRepository = stockRepository;
         this.holdingRepository = holdingRepository;
         this.transactionRepository = transactionRepository;
-        this.portfolioSnapshotRepository =
-                portfolioSnapshotRepository;
-        this.currencyConversionService =
-                currencyConversionService;
+        this.portfolioSnapshotRepository = portfolioSnapshotRepository;
+        this.currencyConversionService = currencyConversionService;
     }
-
 
     // =========================================================
     // BUY STOCK
@@ -68,20 +66,23 @@ public class TradeService {
                         )
                 );
 
+        // 2. Validate symbol and exchange
+        String symbol = normalize(request.getSymbol());
+        String exchange = normalize(request.getExchange());
 
-        // 2. Find the stock
-        Stock stock = stockRepository.findBySymbol(
-                        request.getSymbol().toUpperCase()
-                )
+        // 3. Find the exact stock using symbol + exchange
+        Stock stock = stockRepository
+                .findBySymbolAndExchange(symbol, exchange)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Stock not found: "
-                                        + request.getSymbol()
+                                        + symbol
+                                        + " on "
+                                        + exchange
                         )
                 );
 
-
-        // 3. Check stock status
+        // 4. Check stock status
         if (stock.getStatus() == StockStatus.SUSPENDED) {
 
             throw new IllegalArgumentException(
@@ -89,18 +90,22 @@ public class TradeService {
             );
         }
 
-
-        // 4. Get current price from database
+        // 5. Get current price
         BigDecimal price = stock.getCurrentPrice();
 
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
 
-        // 5. Calculate total cost
+            throw new IllegalArgumentException(
+                    "Stock price is not available"
+            );
+        }
+
+        // 6. Calculate total cost
         BigDecimal totalAmount = price.multiply(
                 BigDecimal.valueOf(request.getQuantity())
         );
 
-
-        // 6. Check balance
+        // 7. Check balance
         if (user.getVirtualBalance().compareTo(totalAmount) < 0) {
 
             throw new IllegalArgumentException(
@@ -108,8 +113,7 @@ public class TradeService {
             );
         }
 
-
-        // 7. Deduct money
+        // 8. Deduct money
         BigDecimal remainingBalance =
                 user.getVirtualBalance()
                         .subtract(totalAmount);
@@ -118,16 +122,14 @@ public class TradeService {
 
         userRepository.save(user);
 
-
-        // 8. Find existing holding
+        // 9. Find existing holding for this exact stock
         Holding holding = holdingRepository
                 .findByUserAndStock(user, stock)
                 .orElse(null);
 
-
         if (holding == null) {
 
-            // First time buying this stock
+            // First time buying this exact stock
             holding = new Holding();
 
             holding.setUser(user);
@@ -137,13 +139,10 @@ public class TradeService {
 
         } else {
 
-            // User already owns this stock
+            // User already owns this exact stock
 
-            int oldQuantity =
-                    holding.getQuantity();
-
-            int newQuantity =
-                    request.getQuantity();
+            int oldQuantity = holding.getQuantity();
+            int newQuantity = request.getQuantity();
 
             BigDecimal oldAverage =
                     holding.getAverageBuyPrice();
@@ -165,53 +164,38 @@ public class TradeService {
                     oldValue
                             .add(newValue)
                             .divide(
-                                    BigDecimal.valueOf(
-                                            totalQuantity
-                                    ),
+                                    BigDecimal.valueOf(totalQuantity),
                                     2,
-                                    java.math.RoundingMode.HALF_UP
+                                    RoundingMode.HALF_UP
                             );
 
             holding.setQuantity(totalQuantity);
             holding.setAverageBuyPrice(newAverage);
         }
 
-
         holdingRepository.save(holding);
 
-
-        // 9. Create transaction record
-        Transaction transaction =
-                new Transaction();
+        // 10. Create transaction record
+        Transaction transaction = new Transaction();
 
         transaction.setUser(user);
         transaction.setStock(stock);
-        transaction.setType(
-                TransactionType.BUY
-        );
-        transaction.setQuantity(
-                request.getQuantity()
-        );
+        transaction.setType(TransactionType.BUY);
+        transaction.setQuantity(request.getQuantity());
         transaction.setPrice(price);
-        transaction.setTotalAmount(
-                totalAmount
-        );
-        transaction.setExecutedAt(
-                LocalDateTime.now()
-        );
-
+        transaction.setTotalAmount(totalAmount);
+        transaction.setExecutedAt(LocalDateTime.now());
 
         Transaction savedTransaction =
-                transactionRepository.save(
-                        transaction
-                );
+                transactionRepository.save(transaction);
+
         savePortfolioSnapshot(user);
 
-
-        // 10. Return trade response
+        // 11. Return response
         return new TradeResponse(
                 savedTransaction.getId(),
                 stock.getSymbol(),
+                stock.getExchange(),
                 TransactionType.BUY,
                 request.getQuantity(),
                 price,
@@ -220,7 +204,6 @@ public class TradeService {
                 savedTransaction.getExecutedAt()
         );
     }
-
 
     // =========================================================
     // SELL STOCK
@@ -240,20 +223,23 @@ public class TradeService {
                         )
                 );
 
+        // 2. Validate symbol and exchange
+        String symbol = normalize(request.getSymbol());
+        String exchange = normalize(request.getExchange());
 
-        // 2. Find the stock
-        Stock stock = stockRepository.findBySymbol(
-                        request.getSymbol().toUpperCase()
-                )
+        // 3. Find the exact stock using symbol + exchange
+        Stock stock = stockRepository
+                .findBySymbolAndExchange(symbol, exchange)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Stock not found: "
-                                        + request.getSymbol()
+                                        + symbol
+                                        + " on "
+                                        + exchange
                         )
                 );
 
-
-        // 3. Check stock status
+        // 4. Check stock status
         if (stock.getStatus() == StockStatus.SUSPENDED) {
 
             throw new IllegalArgumentException(
@@ -261,8 +247,7 @@ public class TradeService {
             );
         }
 
-
-        // 4. Find user's holding
+        // 5. Find user's holding for this exact stock
         Holding holding = holdingRepository
                 .findByUserAndStock(user, stock)
                 .orElseThrow(() ->
@@ -271,23 +256,25 @@ public class TradeService {
                         )
                 );
 
-
-        // 5. Check quantity
-        if (holding.getQuantity()
-                < request.getQuantity()) {
+        // 6. Check quantity
+        if (holding.getQuantity() < request.getQuantity()) {
 
             throw new IllegalArgumentException(
                     "Insufficient shares to sell"
             );
         }
 
+        // 7. Get current stock price
+        BigDecimal price = stock.getCurrentPrice();
 
-        // 6. Get current stock price
-        BigDecimal price =
-                stock.getCurrentPrice();
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
 
+            throw new IllegalArgumentException(
+                    "Stock price is not available"
+            );
+        }
 
-        // 7. Calculate sale amount
+        // 8. Calculate sale amount
         BigDecimal totalAmount =
                 price.multiply(
                         BigDecimal.valueOf(
@@ -295,24 +282,19 @@ public class TradeService {
                         )
                 );
 
-
-        // 8. Add money to user's balance
+        // 9. Add money to user's balance
         BigDecimal remainingBalance =
                 user.getVirtualBalance()
                         .add(totalAmount);
 
-        user.setVirtualBalance(
-                remainingBalance
-        );
+        user.setVirtualBalance(remainingBalance);
 
         userRepository.save(user);
 
-
-        // 9. Reduce holding
+        // 10. Reduce holding
         int remainingQuantity =
                 holding.getQuantity()
                         - request.getQuantity();
-
 
         if (remainingQuantity == 0) {
 
@@ -321,48 +303,32 @@ public class TradeService {
 
         } else {
 
-            holding.setQuantity(
-                    remainingQuantity
-            );
+            holding.setQuantity(remainingQuantity);
 
-            holdingRepository.save(
-                    holding
-            );
+            holdingRepository.save(holding);
         }
 
-
-        // 10. Create transaction
-        Transaction transaction =
-                new Transaction();
+        // 11. Create transaction
+        Transaction transaction = new Transaction();
 
         transaction.setUser(user);
         transaction.setStock(stock);
-        transaction.setType(
-                TransactionType.SELL
-        );
-        transaction.setQuantity(
-                request.getQuantity()
-        );
+        transaction.setType(TransactionType.SELL);
+        transaction.setQuantity(request.getQuantity());
         transaction.setPrice(price);
-        transaction.setTotalAmount(
-                totalAmount
-        );
-        transaction.setExecutedAt(
-                LocalDateTime.now()
-        );
-
+        transaction.setTotalAmount(totalAmount);
+        transaction.setExecutedAt(LocalDateTime.now());
 
         Transaction savedTransaction =
-                transactionRepository.save(
-                        transaction
-                );
+                transactionRepository.save(transaction);
 
         savePortfolioSnapshot(user);
 
-        // 11. Return response
+        // 12. Return response
         return new TradeResponse(
                 savedTransaction.getId(),
                 stock.getSymbol(),
+                stock.getExchange(),
                 TransactionType.SELL,
                 request.getQuantity(),
                 price,
@@ -371,6 +337,10 @@ public class TradeService {
                 savedTransaction.getExecutedAt()
         );
     }
+
+    // =========================================================
+    // PORTFOLIO SNAPSHOT
+    // =========================================================
 
     private void savePortfolioSnapshot(User user) {
 
@@ -391,6 +361,10 @@ public class TradeService {
                     holding.getStock()
                             .getCurrentPrice();
 
+            if (currentPrice == null) {
+                continue;
+            }
+
             BigDecimal currentValue =
                     currentPrice.multiply(quantity);
 
@@ -403,8 +377,7 @@ public class TradeService {
 
             if ("INR".equals(currency)) {
 
-                currentValueInr =
-                        currentValue;
+                currentValueInr = currentValue;
 
             } else {
 
@@ -434,14 +407,14 @@ public class TradeService {
                 LocalDateTime.now()
         );
 
-        portfolioSnapshotRepository.save(
-                snapshot
-        );
+        portfolioSnapshotRepository.save(snapshot);
     }
 
-    private String getStockCurrency(
-            Stock stock
-    ) {
+    // =========================================================
+    // STOCK CURRENCY
+    // =========================================================
+
+    private String getStockCurrency(Stock stock) {
 
         String exchange =
                 stock.getExchange();
@@ -460,5 +433,21 @@ public class TradeService {
         }
 
         return "USD";
+    }
+
+    // =========================================================
+    // NORMALIZE
+    // =========================================================
+
+    private String normalize(String value) {
+
+        if (value == null || value.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Symbol and exchange are required"
+            );
+        }
+
+        return value.trim().toUpperCase();
     }
 }

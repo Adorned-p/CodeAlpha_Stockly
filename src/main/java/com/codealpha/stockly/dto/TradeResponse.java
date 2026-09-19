@@ -9,6 +9,7 @@ public class TradeResponse {
 
     private Long transactionId;
     private String symbol;
+    private String exchange;
     private TransactionType type;
     private Integer quantity;
     private BigDecimal price;
@@ -22,6 +23,7 @@ public class TradeResponse {
     public TradeResponse(
             Long transactionId,
             String symbol,
+            String exchange,
             TransactionType type,
             Integer quantity,
             BigDecimal price,
@@ -31,6 +33,7 @@ public class TradeResponse {
     ) {
         this.transactionId = transactionId;
         this.symbol = symbol;
+        this.exchange = exchange;
         this.type = type;
         this.quantity = quantity;
         this.price = price;
@@ -45,6 +48,10 @@ public class TradeResponse {
 
     public String getSymbol() {
         return symbol;
+    }
+
+    public String getExchange() {
+        return exchange;
     }
 
     public TransactionType getType() {

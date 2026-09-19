@@ -144,8 +144,7 @@ public class RealMarketDataScheduler {
          */
         ExternalQuoteResponse externalQuote =
                 marketDataProviderService.getQuote(
-                        instrument.getSymbol(),
-                        instrument.getExchange()
+                        instrument
                 );
 
         if (externalQuote == null) {

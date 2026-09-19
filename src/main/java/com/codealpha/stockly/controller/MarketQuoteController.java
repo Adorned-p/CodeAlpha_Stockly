@@ -1,7 +1,6 @@
 package com.codealpha.stockly.controller;
 
 import com.codealpha.stockly.dto.ExternalSymbolSearchResponse;
-import com.codealpha.stockly.dto.MarketCandleResponse;
 import com.codealpha.stockly.dto.MarketQuoteResponse;
 import com.codealpha.stockly.entity.MarketQuote;
 import com.codealpha.stockly.service.ExternalMarketDataClient;
@@ -34,10 +33,14 @@ public class MarketQuoteController {
 
     @GetMapping("/{symbol}/quote")
     public MarketQuoteResponse getQuote(
-            @PathVariable String symbol
+            @PathVariable String symbol,
+            @RequestParam String exchange
     ) {
 
-        return marketQuoteService.getQuote(symbol);
+        return marketQuoteService.getQuote(
+                symbol,
+                exchange
+        );
     }
 
     // =========================================================
@@ -48,6 +51,7 @@ public class MarketQuoteController {
     @ResponseStatus(HttpStatus.OK)
     public MarketQuoteResponse updateQuote(
             @PathVariable String symbol,
+            @RequestParam String exchange,
             @RequestParam BigDecimal bid,
             @RequestParam BigDecimal ask,
             @RequestParam BigDecimal last
@@ -56,6 +60,7 @@ public class MarketQuoteController {
         MarketQuote quote =
                 marketQuoteService.updateQuote(
                         symbol,
+                        exchange,
                         bid,
                         ask,
                         last
@@ -70,23 +75,6 @@ public class MarketQuoteController {
         );
     }
 
-    // =========================================================
-    // HISTORICAL DATA
-    // =========================================================
-
-    @GetMapping("/{symbol}/history")
-    public List<MarketCandleResponse> getHistoricalData(
-            @PathVariable String symbol,
-            @RequestParam(defaultValue = "1day") String interval,
-            @RequestParam(defaultValue = "30") int outputSize
-    ) {
-
-        return marketQuoteService.getHistoricalData(
-                symbol,
-                interval,
-                outputSize
-        );
-    }
 
     // =========================================================
     // SYMBOL SEARCH

@@ -34,51 +34,95 @@ public class WatchlistService {
         this.currencyConversionService = currencyConversionService;
     }
 
+    // =========================================================
+    // GET WATCHLIST
+    // =========================================================
+
     public List<WatchlistResponse> getWatchlist(
             String userEmail
     ) {
 
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("User not found")
-                );
+        User user =
+                userRepository.findByEmail(userEmail)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "User not found"
+                                )
+                        );
 
-        return watchlistRepository.findByUser(user)
+        return watchlistRepository
+                .findByUser(user)
                 .stream()
-                .map(item -> toResponse(item.getStock()))
+                .map(item ->
+                        toResponse(item.getStock())
+                )
                 .toList();
     }
+
+    // =========================================================
+    // ADD TO WATCHLIST
+    // =========================================================
 
     @Transactional
     public WatchlistResponse addToWatchlist(
             String userEmail,
-            String symbol
+            String symbol,
+            String exchange
     ) {
 
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("User not found")
-                );
+        User user =
+                userRepository.findByEmail(userEmail)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "User not found"
+                                )
+                        );
 
-        Stock stock = stockRepository.findBySymbol(
-                        symbol.toUpperCase()
-                )
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Stock not found: " + symbol
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Stock symbol is required"
+            );
+        }
+
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Stock exchange is required"
+            );
+        }
+
+        String normalizedSymbol =
+                symbol.trim().toUpperCase();
+
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
+        Stock stock =
+                stockRepository
+                        .findBySymbolAndExchange(
+                                normalizedSymbol,
+                                normalizedExchange
                         )
-                );
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Stock not found: "
+                                                + normalizedSymbol
+                                                + " on "
+                                                + normalizedExchange
+                                )
+                        );
 
         if (watchlistRepository.existsByUserAndStock(
                 user,
                 stock
         )) {
+
             throw new IllegalArgumentException(
                     "Stock is already in your watchlist"
             );
         }
 
-        Watchlist watchlist = new Watchlist();
+        Watchlist watchlist =
+                new Watchlist();
 
         watchlist.setUser(user);
         watchlist.setStock(stock);
@@ -88,30 +132,63 @@ public class WatchlistService {
         return toResponse(stock);
     }
 
+    // =========================================================
+    // REMOVE FROM WATCHLIST
+    // =========================================================
+
     @Transactional
     public void removeFromWatchlist(
             String userEmail,
-            String symbol
+            String symbol,
+            String exchange
     ) {
 
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("User not found")
-                );
+        User user =
+                userRepository.findByEmail(userEmail)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "User not found"
+                                )
+                        );
 
-        Stock stock = stockRepository.findBySymbol(
-                        symbol.toUpperCase()
-                )
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Stock not found: " + symbol
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Stock symbol is required"
+            );
+        }
+
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Stock exchange is required"
+            );
+        }
+
+        String normalizedSymbol =
+                symbol.trim().toUpperCase();
+
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
+        Stock stock =
+                stockRepository
+                        .findBySymbolAndExchange(
+                                normalizedSymbol,
+                                normalizedExchange
                         )
-                );
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Stock not found: "
+                                                + normalizedSymbol
+                                                + " on "
+                                                + normalizedExchange
+                                )
+                        );
 
         if (!watchlistRepository.existsByUserAndStock(
                 user,
                 stock
         )) {
+
             throw new IllegalArgumentException(
                     "Stock is not in your watchlist"
             );
@@ -204,9 +281,12 @@ public class WatchlistService {
             Stock stock
     ) {
 
-        String exchange = stock.getExchange();
+        String exchange =
+                stock.getExchange();
 
-        if (exchange == null) {
+        if (exchange == null ||
+                exchange.isBlank()) {
+
             return "USD";
         }
 

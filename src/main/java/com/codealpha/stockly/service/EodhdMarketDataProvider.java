@@ -1,32 +1,32 @@
 package com.codealpha.stockly.service;
 
+import com.codealpha.stockly.dto.InstrumentSearchResponse;
 import com.codealpha.stockly.dto.ExternalQuoteResponse;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
-@Component
-public class TwelveDataMarketDataProvider
-        implements MarketDataProvider {
+import java.util.List;
 
-    private final ExternalMarketDataClient externalMarketDataClient;
+@Service
+public class EodhdMarketDataProvider {
 
-    public TwelveDataMarketDataProvider(
-            ExternalMarketDataClient externalMarketDataClient
+    private final EodhdMarketDataClient client;
+
+    public EodhdMarketDataProvider(
+            EodhdMarketDataClient client
     ) {
-        this.externalMarketDataClient =
-                externalMarketDataClient;
+        this.client = client;
     }
 
     // =========================================================
     // GET QUOTE
     // =========================================================
 
-    @Override
     public ExternalQuoteResponse getQuote(
             String symbol,
             String exchange
     ) {
 
-        return externalMarketDataClient.getQuote(
+        return client.getQuote(
                 symbol,
                 exchange
         );
@@ -40,19 +40,21 @@ public class TwelveDataMarketDataProvider
             String providerSymbol
     ) {
 
-        return externalMarketDataClient
-                .getQuoteByProviderSymbol(
-                        providerSymbol
-                );
+        return client.getQuoteByProviderSymbol(
+                providerSymbol
+        );
     }
 
     // =========================================================
-    // PROVIDER NAME
+    // SEARCH SYMBOLS
     // =========================================================
 
-    @Override
-    public String getProviderName() {
+    public List<InstrumentSearchResponse> searchSymbols(
+            String query
+    ) {
 
-        return "Twelve Data";
+        return client.searchSymbols(
+                query
+        );
     }
 }

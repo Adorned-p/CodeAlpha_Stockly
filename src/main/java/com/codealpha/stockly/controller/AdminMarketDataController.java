@@ -1,32 +1,44 @@
 package com.codealpha.stockly.controller;
 
 import com.codealpha.stockly.service.AlphaVantageDailyDataScheduler;
+import com.codealpha.stockly.service.RealMarketDataScheduler;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/admin/market-data")
 public class AdminMarketDataController {
 
-    private final AlphaVantageDailyDataScheduler scheduler;
+    private final RealMarketDataScheduler realMarketDataScheduler;
+    private final AlphaVantageDailyDataScheduler alphaVantageDailyDataScheduler;
 
     public AdminMarketDataController(
-            AlphaVantageDailyDataScheduler scheduler
+            RealMarketDataScheduler realMarketDataScheduler,
+            AlphaVantageDailyDataScheduler alphaVantageDailyDataScheduler
     ) {
-        this.scheduler = scheduler;
+        this.realMarketDataScheduler = realMarketDataScheduler;
+        this.alphaVantageDailyDataScheduler = alphaVantageDailyDataScheduler;
     }
+
+    // =========================================================
+    // LIVE MARKET DATA SYNC
+    // =========================================================
 
     @PostMapping("/sync")
     public String syncMarketData() {
 
-        scheduler.refreshDailyMarketData();
+        realMarketDataScheduler.refreshMarketData();
 
         return "Market data synchronization triggered.";
     }
 
+    // =========================================================
+    // HISTORICAL DATA BACKFILL
+    // =========================================================
+
     @PostMapping("/backfill-history")
     public String backfillHistory() {
 
-        scheduler.backfillDailyHistory();
+        alphaVantageDailyDataScheduler.backfillDailyHistory();
 
         return "Historical market data backfill triggered.";
     }

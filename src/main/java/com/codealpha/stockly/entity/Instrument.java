@@ -24,7 +24,8 @@ public class Instrument {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "market_data_status", nullable = false, length = 20)
-    private MarketDataStatus marketDataStatus = MarketDataStatus.UNAVAILABLE;
+    private MarketDataStatus marketDataStatus =
+            MarketDataStatus.UNAVAILABLE;
 
     @Column(nullable = false, length = 30)
     private String symbol;
@@ -51,24 +52,48 @@ public class Instrument {
     private boolean active;
 
     /*
-     * Provider-specific symbol used by Alpha Vantage.
+     * Primary market-data provider selected for this instrument.
+     *
+     * Example:
+     *   marketDataProvider = EODHD
+     *
+     * This tells Stockly which provider should be preferred
+     * when fetching market data for this instrument.
+     */
+    @Column(name = "market_data_provider", length = 30)
+    private String marketDataProvider;
+
+    /*
+     * Provider-specific symbols.
+     *
+     * Stockly's symbol is provider-independent.
+     * Each market-data provider may represent the same
+     * instrument using a different symbol format.
      *
      * Examples:
-     * TCS       -> TCS.BSE
-     * RELIANCE  -> RELIANCE.BSE
-     * AAPL      -> AAPL
      *
-     * This is intentionally separate from Stockly's own symbol
-     * because different market-data providers can use different
-     * symbol formats.
+     * Stockly:
+     *   symbol   = 7203
+     *   exchange = JPX
+     *
+     * Provider mappings:
+     *   EODHD          -> 7203.T
+     *   Twelve Data    -> 7203
+     *   Alpha Vantage  -> 7203.T
      */
-    @Column(name = "alpha_vantage_symbol", length = 50)
+    @Column(name = "eodhd_symbol", length = 100)
+    private String eodhdSymbol;
+
+    @Column(name = "twelve_data_symbol", length = 100)
+    private String twelveDataSymbol;
+
+    @Column(name = "alpha_vantage_symbol", length = 100)
     private String alphaVantageSymbol;
 
     /*
      * Link to existing Stock entity.
      *
-     * This allows our new trading engine to work with
+     * This allows the trading engine to work with
      * the existing Stock/Holding/Portfolio system.
      */
     @OneToOne(fetch = FetchType.LAZY)
@@ -144,6 +169,30 @@ public class Instrument {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public String getMarketDataProvider() {
+        return marketDataProvider;
+    }
+
+    public void setMarketDataProvider(String marketDataProvider) {
+        this.marketDataProvider = marketDataProvider;
+    }
+
+    public String getEodhdSymbol() {
+        return eodhdSymbol;
+    }
+
+    public void setEodhdSymbol(String eodhdSymbol) {
+        this.eodhdSymbol = eodhdSymbol;
+    }
+
+    public String getTwelveDataSymbol() {
+        return twelveDataSymbol;
+    }
+
+    public void setTwelveDataSymbol(String twelveDataSymbol) {
+        this.twelveDataSymbol = twelveDataSymbol;
     }
 
     public String getAlphaVantageSymbol() {

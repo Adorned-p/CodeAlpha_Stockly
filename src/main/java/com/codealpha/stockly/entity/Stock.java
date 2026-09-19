@@ -4,14 +4,22 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "stocks")
+@Table(
+        name = "stocks",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_stock_symbol_exchange",
+                        columnNames = {"symbol", "exchange"}
+                )
+        }
+)
 public class Stock {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 20)
+    @Column(nullable = false, length = 20)
     private String symbol;
 
     @Column(nullable = false)

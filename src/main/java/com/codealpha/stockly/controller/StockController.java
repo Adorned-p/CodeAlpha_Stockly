@@ -2,12 +2,15 @@ package com.codealpha.stockly.controller;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.List;
 
+import com.codealpha.stockly.entity.Instrument;
+import com.codealpha.stockly.repository.InstrumentRepository;
 import com.codealpha.stockly.entity.TimeRange;
 import com.codealpha.stockly.dto.StockPriceHistoryResponse;
 import com.codealpha.stockly.entity.StockPriceHistory;
 import com.codealpha.stockly.repository.StockPriceHistoryRepository;
-import java.time.LocalDateTime;
 
 import com.codealpha.stockly.dto.StockRequest;
 import com.codealpha.stockly.dto.StockResponse;
@@ -20,8 +23,6 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/stocks")
 public class StockController {
@@ -29,15 +30,18 @@ public class StockController {
     private final StockPriceHistoryRepository priceHistoryRepository;
     private final StockService stockService;
     private final CurrencyConversionService currencyConversionService;
+    private final InstrumentRepository instrumentRepository;
 
     public StockController(
             StockService stockService,
             StockPriceHistoryRepository priceHistoryRepository,
-            CurrencyConversionService currencyConversionService
+            CurrencyConversionService currencyConversionService,
+            InstrumentRepository instrumentRepository
     ) {
         this.stockService = stockService;
         this.priceHistoryRepository = priceHistoryRepository;
         this.currencyConversionService = currencyConversionService;
+        this.instrumentRepository = instrumentRepository;
     }
 
     // =========================================================
@@ -81,11 +85,15 @@ public class StockController {
     @GetMapping("/{symbol}/history")
     public List<StockPriceHistoryResponse> getPriceHistory(
             @PathVariable String symbol,
+            @RequestParam String exchange,
             @RequestParam(defaultValue = "ONE_DAY") TimeRange range
     ) {
 
         Stock stock =
-                stockService.getStockBySymbol(symbol);
+                stockService.getStockBySymbolAndExchange(
+                        symbol,
+                        exchange
+                );
 
         LocalDateTime end =
                 LocalDateTime.now();
@@ -147,16 +155,20 @@ public class StockController {
     }
 
     // =========================================================
-    // GET STOCK BY SYMBOL
+    // GET STOCK BY SYMBOL + EXCHANGE
     // =========================================================
 
     @GetMapping("/{symbol}")
     public StockResponse getStockBySymbol(
-            @PathVariable String symbol
+            @PathVariable String symbol,
+            @RequestParam String exchange
     ) {
 
         Stock stock =
-                stockService.getStockBySymbol(symbol);
+                stockService.getStockBySymbolAndExchange(
+                        symbol,
+                        exchange
+                );
 
         return toResponse(stock);
     }
@@ -174,7 +186,9 @@ public class StockController {
         Stock stock = new Stock();
 
         stock.setSymbol(
-                request.getSymbol().toUpperCase()
+                request.getSymbol()
+                        .trim()
+                        .toUpperCase()
         );
 
         stock.setCompanyName(
@@ -206,7 +220,9 @@ public class StockController {
         );
 
         stock.setExchange(
-                request.getExchange().toUpperCase()
+                request.getExchange()
+                        .trim()
+                        .toUpperCase()
         );
 
         stock.setStatus(
@@ -226,16 +242,17 @@ public class StockController {
     @PutMapping("/{symbol}")
     public StockResponse updateStock(
             @PathVariable String symbol,
+            @RequestParam String exchange,
             @Valid @RequestBody StockUpdateRequest request
     ) {
 
         Stock updatedStock =
                 stockService.updateStock(
                         symbol,
+                        exchange,
                         request.getCompanyName(),
                         request.getCurrentPrice(),
                         request.getSector(),
-                        request.getExchange(),
                         request.getStatus()
                 );
 
@@ -277,13 +294,13 @@ public class StockController {
         /*
          * Stock currently does not have a currency field.
          *
-         * Your existing global stocks use exchange information,
-         * so determine the native currency from the exchange.
+         * Determine native currency from the Instrument first.
          *
          * NSE/BSE -> INR
-         * Everything else -> USD for the current US-market stocks.
+         * Everything else -> USD fallback.
          */
-        String currency = getStockCurrency(stock);
+        String currency =
+                getStockCurrency(stock);
 
         BigDecimal currentPriceInr;
         BigDecimal exchangeRateToInr;
@@ -314,6 +331,7 @@ public class StockController {
                 stock.getId(),
                 stock.getSymbol(),
                 stock.getCompanyName(),
+                currency,
                 stock.getCurrentPrice(),
                 currentPriceInr,
                 exchangeRateToInr,
@@ -337,17 +355,37 @@ public class StockController {
             Stock stock
     ) {
 
-        String exchange = stock.getExchange();
+        Instrument instrument =
+                instrumentRepository
+                        .findBySymbolAndExchange(
+                                stock.getSymbol(),
+                                stock.getExchange()
+                        )
+                        .orElse(null);
 
-        if (exchange == null) {
+        if (instrument != null &&
+                instrument.getCurrency() != null &&
+                !instrument.getCurrency().isBlank()) {
+
+            return instrument.getCurrency()
+                    .trim()
+                    .toUpperCase();
+        }
+
+        String exchange =
+                stock.getExchange();
+
+        if (exchange == null ||
+                exchange.isBlank()) {
+
             return "USD";
         }
 
         String normalizedExchange =
                 exchange.trim().toUpperCase();
 
-        if ("NSE".equals(normalizedExchange)
-                || "BSE".equals(normalizedExchange)) {
+        if ("NSE".equals(normalizedExchange) ||
+                "BSE".equals(normalizedExchange)) {
 
             return "INR";
         }

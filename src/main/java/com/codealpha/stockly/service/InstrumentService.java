@@ -1,6 +1,5 @@
 package com.codealpha.stockly.service;
 
-
 import com.codealpha.stockly.dto.ExternalQuoteResponse;
 import com.codealpha.stockly.dto.ExternalSymbolSearchResponse;
 import com.codealpha.stockly.dto.InstrumentSearchResponse;
@@ -13,15 +12,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class InstrumentService {
 
+    private final EodhdMarketDataProvider eodhdMarketDataProvider;
     private final ExternalMarketDataClient externalMarketDataClient;
     private final MarketDataProviderService marketDataProviderService;
-    private final AlphaVantageSymbolResolver alphaVantageSymbolResolver;
     private final InstrumentRepository instrumentRepository;
     private final StockRepository stockRepository;
 
@@ -30,22 +29,13 @@ public class InstrumentService {
             StockRepository stockRepository,
             ExternalMarketDataClient externalMarketDataClient,
             MarketDataProviderService marketDataProviderService,
-            AlphaVantageSymbolResolver alphaVantageSymbolResolver
+            EodhdMarketDataProvider eodhdMarketDataProvider
     ) {
-        this.instrumentRepository =
-                instrumentRepository;
-
-        this.stockRepository =
-                stockRepository;
-
-        this.externalMarketDataClient =
-                externalMarketDataClient;
-
-        this.marketDataProviderService =
-                marketDataProviderService;
-
-        this.alphaVantageSymbolResolver =
-                alphaVantageSymbolResolver;
+        this.instrumentRepository = instrumentRepository;
+        this.stockRepository = stockRepository;
+        this.externalMarketDataClient = externalMarketDataClient;
+        this.marketDataProviderService = marketDataProviderService;
+        this.eodhdMarketDataProvider = eodhdMarketDataProvider;
     }
 
     // =========================================================
@@ -53,7 +43,6 @@ public class InstrumentService {
     // =========================================================
 
     public List<Instrument> getAllInstruments() {
-
         return instrumentRepository.findByActiveTrue();
     }
 
@@ -64,9 +53,7 @@ public class InstrumentService {
     public Instrument getBySymbol(String symbol) {
 
         return instrumentRepository
-                .findBySymbol(
-                        symbol.toUpperCase()
-                )
+                .findBySymbol(symbol.toUpperCase())
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
                                 "Instrument not found: " + symbol
@@ -100,12 +87,10 @@ public class InstrumentService {
         String exchange =
                 stock.getExchange().toUpperCase();
 
-        if (instrumentRepository
-                .existsBySymbolAndExchange(
-                        symbol,
-                        exchange
-                )) {
-
+        if (instrumentRepository.existsBySymbolAndExchange(
+                symbol,
+                exchange
+        )) {
             throw new IllegalArgumentException(
                     "Instrument already exists: " + symbol
             );
@@ -136,24 +121,7 @@ public class InstrumentService {
 
         instrument.setStock(stock);
 
-        /*
-         * Resolve the Alpha Vantage provider symbol
-         * once and store it.
-         */
-        String alphaVantageSymbol =
-                resolveAlphaVantageSymbol(
-                        symbol,
-                        exchange,
-                        country
-                );
-
-        instrument.setAlphaVantageSymbol(
-                alphaVantageSymbol
-        );
-
-        return instrumentRepository.save(
-                instrument
-        );
+        return instrumentRepository.save(instrument);
     }
 
     // =========================================================
@@ -179,7 +147,6 @@ public class InstrumentService {
 
         instrument.setCurrentPrice(price);
 
-
         /*
          * Keep the existing Stock price synchronized
          * with Instrument.
@@ -194,22 +161,13 @@ public class InstrumentService {
             );
         }
 
-        return instrumentRepository.save(
-                instrument
-        );
+        return instrumentRepository.save(instrument);
     }
 
     // =========================================================
     // SEARCH INSTRUMENTS
     // =========================================================
 
-    /*
-     * Search still uses Twelve Data's existing search DTO.
-     *
-     * We will make this multi-provider in Stage 2B,
-     * because Alpha Vantage returns a different search
-     * response structure.
-     */
     public List<InstrumentSearchResponse> searchInstruments(
             String query
     ) {
@@ -222,52 +180,326 @@ public class InstrumentService {
             );
         }
 
-        ExternalSymbolSearchResponse response =
-                externalMarketDataClient.searchSymbols(
-                        query.trim()
-                );
+        String normalizedQuery =
+                query.trim();
 
-        if (response == null ||
-                response.getData() == null) {
+        List<InstrumentSearchResponse> results =
+                new ArrayList<>();
 
-            return Collections.emptyList();
+        // =====================================================
+        // EODHD SEARCH
+        // =====================================================
+
+        try {
+
+            List<InstrumentSearchResponse> eodhdResults =
+                    eodhdMarketDataProvider.searchSymbols(
+                            normalizedQuery
+                    );
+
+            if (eodhdResults != null) {
+                results.addAll(eodhdResults);
+            }
+
+        } catch (Exception exception) {
+
+            System.err.println(
+                    "EODHD search unavailable for '"
+                            + normalizedQuery
+                            + "': "
+                            + exception.getMessage()
+            );
         }
 
-        return response.getData()
+        // =====================================================
+        // TWELVE DATA SEARCH
+        // =====================================================
+
+        try {
+
+            ExternalSymbolSearchResponse response =
+                    externalMarketDataClient.searchSymbols(
+                            normalizedQuery
+                    );
+
+            if (response != null &&
+                    response.getData() != null) {
+
+                results.addAll(
+                        response.getData()
+                                .stream()
+                                .map(result ->
+                                        new InstrumentSearchResponse(
+                                                result.getSymbol(),
+                                                result.getInstrument_name(),
+                                                result.getExchange(),
+                                                result.getCountry(),
+                                                result.getCurrency(),
+                                                result.getInstrument_type(),
+                                                "TWELVE_DATA",
+                                                result.getSymbol()
+                                        )
+                                )
+                                .toList()
+                );
+            }
+
+        } catch (Exception exception) {
+
+            System.err.println(
+                    "Twelve Data search unavailable for '"
+                            + normalizedQuery
+                            + "': "
+                            + exception.getMessage()
+            );
+        }
+
+        // =====================================================
+        // FILTER + DEDUPLICATE
+        // =====================================================
+
+        return results
                 .stream()
-                .map(result ->
-                        new InstrumentSearchResponse(
-                                result.getSymbol(),
-                                result.getInstrument_name(),
-                                result.getExchange(),
-                                result.getCountry(),
-                                result.getCurrency(),
-                                result.getInstrument_type()
+
+                .filter(this::isSupportedEquity)
+
+                .filter(result ->
+                        result.getSymbol() != null
+                                && !result.getSymbol().isBlank()
+                                && result.getExchange() != null
+                                && !result.getExchange().isBlank()
+                )
+
+                .sorted(
+                        java.util.Comparator
+                                .comparingInt(
+                                        (InstrumentSearchResponse result) ->
+                                                searchPriority(
+                                                        result,
+                                                        normalizedQuery
+                                                )
+                                )
+                                .thenComparingInt(result ->
+                                        result.getName() == null
+                                                ? Integer.MAX_VALUE
+                                                : result.getName().length()
+                                )
+                )
+
+                .collect(
+                        java.util.stream.Collectors.toMap(
+
+                                result ->
+                                        result.getSymbol()
+                                                .trim()
+                                                .toUpperCase()
+                                                + "|"
+                                                + result.getExchange()
+                                                .trim()
+                                                .toUpperCase(),
+
+                                result -> result,
+
+                                /*
+                                 * If EODHD and Twelve Data
+                                 * return the same instrument,
+                                 * keep the first result.
+                                 */
+                                (existing, duplicate) ->
+                                        existing,
+
+                                java.util.LinkedHashMap::new
                         )
                 )
+
+                .values()
+                .stream()
+                .limit(20)
                 .toList();
     }
 
     // =========================================================
-    // ALPHA VANTAGE SYMBOL RESOLUTION
+    // SEARCH PRIORITY
     // =========================================================
 
-    private String resolveAlphaVantageSymbol(
-            String symbol,
-            String exchange,
-            String country
+    private int searchPriority(
+            InstrumentSearchResponse result,
+            String query
     ) {
 
-        return alphaVantageSymbolResolver.resolve(
-                symbol,
-                exchange,
-                country
+        String normalizedQuery =
+                query.trim().toLowerCase();
+
+        String symbol =
+                result.getSymbol() == null
+                        ? ""
+                        : result.getSymbol()
+                        .trim()
+                        .toLowerCase();
+
+        String name =
+                result.getName() == null
+                        ? ""
+                        : result.getName()
+                        .trim()
+                        .toLowerCase();
+
+        String type =
+                result.getAssetType() == null
+                        ? ""
+                        : result.getAssetType()
+                        .trim()
+                        .toLowerCase();
+
+        boolean commonStock =
+                type.equals("common stock");
+
+        boolean depositaryReceipt =
+                type.contains("depositary")
+                        || name.contains("adr");
+
+        // 1. Exact symbol match
+        if (symbol.equals(normalizedQuery)) {
+            return 0;
+        }
+
+        // 2. Exact company-name match
+        if (name.equals(normalizedQuery)) {
+            return 1;
+        }
+
+        // 3. Name starts with search query
+        if (name.startsWith(normalizedQuery + " ")) {
+
+            if (commonStock && !depositaryReceipt) {
+                return 2;
+            }
+
+            if (commonStock) {
+                return 3;
+            }
+
+            if (depositaryReceipt) {
+                return 4;
+            }
+
+            return 5;
+        }
+
+        // 4. Query appears somewhere inside name
+        if (name.contains(normalizedQuery)) {
+
+            if (commonStock && !depositaryReceipt) {
+                return 6;
+            }
+
+            if (commonStock) {
+                return 7;
+            }
+
+            if (depositaryReceipt) {
+                return 8;
+            }
+        }
+
+        // 5. Everything else
+        return 10;
+    }
+
+    // =========================================================
+    // SUPPORTED EQUITY CHECK
+    // =========================================================
+
+    private boolean isSupportedEquity(
+            InstrumentSearchResponse result
+    ) {
+
+        if (result == null) {
+            return false;
+        }
+
+        String symbol =
+                result.getSymbol();
+
+        String name =
+                result.getName();
+
+        String assetType =
+                result.getAssetType();
+
+        if (symbol == null ||
+                symbol.isBlank()) {
+            return false;
+        }
+
+        if (name == null ||
+                name.isBlank()) {
+            return false;
+        }
+
+        String normalizedSymbol =
+                symbol.trim().toUpperCase();
+
+        String normalizedName =
+                name.trim().toLowerCase();
+
+        String normalizedType =
+                assetType == null
+                        ? ""
+                        : assetType.trim().toLowerCase();
+
+        // =====================================================
+        // REMOVE ETFs
+        // =====================================================
+
+        if (normalizedType.contains("etf")) {
+            return false;
+        }
+
+        // =====================================================
+        // REMOVE BONDS / NOTES / DEBT
+        // =====================================================
+
+        if (normalizedName.contains("senior note")
+                || normalizedName.contains("senior notes")
+                || normalizedName.contains("unsecured note")
+                || normalizedName.contains("unsecured notes")
+                || normalizedName.contains("bond")
+                || normalizedName.contains("debenture")
+                || normalizedName.contains("medium-term note")
+                || normalizedName.contains("medium term note")) {
+
+            return false;
+        }
+
+        // =====================================================
+        // REMOVE OBVIOUS DEBT IDENTIFIERS
+        // =====================================================
+
+        if (normalizedSymbol.length() >= 10
+                && normalizedSymbol.matches(
+                "[A-Z]{2}[A-Z0-9]{9,}"
+        )) {
+
+            return false;
+        }
+
+        // =====================================================
+        // ALLOW EQUITY TYPES
+        // =====================================================
+
+        return normalizedType.equals("common stock")
+                || normalizedType.equals(
+                "american depositary receipt"
+        )
+                || normalizedType.equals(
+                "depositary receipt"
         );
     }
 
     // =========================================================
-    // CREATE FROM SEARCH RESULT
-    // =========================================================
+// CREATE OR UPDATE FROM SEARCH RESULT
+// =========================================================
 
     @Transactional
     public Instrument createFromSearch(
@@ -276,8 +508,14 @@ public class InstrumentService {
             String assetType,
             String exchange,
             String country,
-            String currency
+            String currency,
+            String provider,
+            String providerSymbol
     ) {
+
+        // =====================================================
+        // VALIDATION
+        // =====================================================
 
         if (symbol == null ||
                 symbol.isBlank()) {
@@ -303,29 +541,170 @@ public class InstrumentService {
             );
         }
 
+        if (provider == null ||
+                provider.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Market data provider is required"
+            );
+        }
+
+        if (providerSymbol == null ||
+                providerSymbol.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Provider symbol is required"
+            );
+        }
+
         String normalizedSymbol =
                 symbol.trim().toUpperCase();
 
         String normalizedExchange =
                 exchange.trim().toUpperCase();
 
+        String normalizedProvider =
+                provider.trim().toUpperCase();
+
+        String normalizedProviderSymbol =
+                providerSymbol.trim().toUpperCase();
+
         // =====================================================
-        // DUPLICATE INSTRUMENT CHECK
+        // VALIDATE PROVIDER
         // =====================================================
 
-        if (instrumentRepository
-                .existsBySymbolAndExchange(
-                        normalizedSymbol,
-                        normalizedExchange
-                )) {
+        if (!normalizedProvider.equals("EODHD")
+                && !normalizedProvider.equals("TWELVE_DATA")
+                && !normalizedProvider.equals("ALPHA_VANTAGE")) {
 
             throw new IllegalArgumentException(
+                    "Unsupported market-data provider: "
+                            + provider
+            );
+        }
+
+        // =====================================================
+        // CHECK IF INSTRUMENT ALREADY EXISTS
+        // =====================================================
+
+        Instrument existingInstrument =
+                instrumentRepository
+                        .findBySymbolAndExchange(
+                                normalizedSymbol,
+                                normalizedExchange
+                        )
+                        .orElse(null);
+
+        // =====================================================
+        // EXISTING INSTRUMENT
+        // =====================================================
+
+        if (existingInstrument != null) {
+
+            System.out.println(
                     "Instrument already exists: "
                             + normalizedSymbol
                             + " ("
                             + normalizedExchange
                             + ")"
             );
+
+            System.out.println(
+                    "Updating provider configuration..."
+            );
+
+            // -------------------------------------------------
+            // Update basic information if supplied
+            // -------------------------------------------------
+
+            existingInstrument.setName(
+                    name.trim()
+            );
+
+            existingInstrument.setAssetType(
+                    assetType == null ||
+                            assetType.isBlank()
+                            ? existingInstrument.getAssetType()
+                            : assetType.trim()
+            );
+
+            if (country != null &&
+                    !country.isBlank()) {
+
+                existingInstrument.setCountry(
+                        country.trim()
+                );
+            }
+
+            if (currency != null &&
+                    !currency.isBlank()) {
+
+                existingInstrument.setCurrency(
+                        currency.trim().toUpperCase()
+                );
+            }
+
+            // -------------------------------------------------
+            // Set selected provider
+            // -------------------------------------------------
+
+            existingInstrument.setMarketDataProvider(
+                    normalizedProvider
+            );
+
+            // -------------------------------------------------
+            // Store provider-specific symbol
+            // -------------------------------------------------
+
+            switch (normalizedProvider) {
+
+                case "EODHD":
+
+                    existingInstrument.setEodhdSymbol(
+                            normalizedProviderSymbol
+                    );
+
+                    break;
+
+                case "TWELVE_DATA":
+
+                    existingInstrument.setTwelveDataSymbol(
+                            normalizedProviderSymbol
+                    );
+
+                    break;
+
+                case "ALPHA_VANTAGE":
+
+                    existingInstrument.setAlphaVantageSymbol(
+                            normalizedProviderSymbol
+                    );
+
+                    break;
+
+                default:
+
+                    throw new IllegalArgumentException(
+                            "Unsupported market-data provider: "
+                                    + provider
+                    );
+            }
+
+            Instrument savedInstrument =
+                    instrumentRepository.save(
+                            existingInstrument
+                    );
+
+            System.out.println(
+                    "Provider configuration updated: "
+                            + normalizedSymbol
+                            + " -> "
+                            + normalizedProvider
+                            + " / "
+                            + normalizedProviderSymbol
+            );
+
+            return savedInstrument;
         }
 
         // =====================================================
@@ -339,16 +718,21 @@ public class InstrumentService {
                         )
                         .orElse(null);
 
+        // =====================================================
+        // EXISTING STOCK
+        // =====================================================
+
         if (stock != null) {
 
             /*
-             * Our current Stock schema uses symbol as
+             * Current Stock schema uses symbol as
              * globally unique.
              */
-            if (!stock.getExchange()
-                    .equalsIgnoreCase(
-                            normalizedExchange
-                    )) {
+            if (stock.getExchange() == null ||
+                    !stock.getExchange()
+                            .equalsIgnoreCase(
+                                    normalizedExchange
+                            )) {
 
                 throw new IllegalArgumentException(
                         "Stock "
@@ -364,37 +748,76 @@ public class InstrumentService {
         } else {
 
             // =================================================
+            // TEMPORARY INSTRUMENT FOR PROVIDER LOOKUP
+            // =================================================
+
+            Instrument providerInstrument =
+                    new Instrument();
+
+            providerInstrument.setSymbol(
+                    normalizedSymbol
+            );
+
+            providerInstrument.setExchange(
+                    normalizedExchange
+            );
+
+            providerInstrument.setMarketDataProvider(
+                    normalizedProvider
+            );
+
+            switch (normalizedProvider) {
+
+                case "EODHD":
+
+                    providerInstrument.setEodhdSymbol(
+                            normalizedProviderSymbol
+                    );
+
+                    break;
+
+                case "TWELVE_DATA":
+
+                    providerInstrument.setTwelveDataSymbol(
+                            normalizedProviderSymbol
+                    );
+
+                    break;
+
+                case "ALPHA_VANTAGE":
+
+                    providerInstrument.setAlphaVantageSymbol(
+                            normalizedProviderSymbol
+                    );
+
+                    break;
+
+                default:
+
+                    throw new IllegalArgumentException(
+                            "Unsupported market-data provider: "
+                                    + provider
+                    );
+            }
+
+            // =================================================
             // GET INITIAL MARKET PRICE
             // =================================================
 
-            /*
-             * IMPORTANT:
-             *
-             * Do NOT call ExternalMarketDataClient directly.
-             *
-             * The provider coordinator decides:
-             *
-             * Twelve Data
-             *       ↓
-             * Alpha Vantage fallback
-             */
             ExternalQuoteResponse quote =
                     marketDataProviderService.getQuote(
-                            normalizedSymbol,
-                            normalizedExchange
+                            providerInstrument
                     );
 
             if (quote == null ||
                     quote.getClose() == null ||
                     quote.getClose()
-                            .compareTo(
-                                    BigDecimal.ZERO
-                            ) <= 0) {
+                            .compareTo(BigDecimal.ZERO) <= 0) {
 
                 throw new IllegalArgumentException(
                         "Could not obtain market price for "
                                 + normalizedSymbol
-                                + " from the available market data providers."
+                                + " from the selected market data provider."
                 );
             }
 
@@ -456,11 +879,6 @@ public class InstrumentService {
                     dayLow
             );
 
-            /*
-             * Current search DTO does not provide sector.
-             *
-             * Do not invent one.
-             */
             stock.setSector(
                     "Unknown"
             );
@@ -480,7 +898,7 @@ public class InstrumentService {
         }
 
         // =====================================================
-        // CREATE INSTRUMENT
+        // CREATE NEW INSTRUMENT
         // =====================================================
 
         Instrument instrument =
@@ -512,11 +930,17 @@ public class InstrumentService {
                         : country.trim()
         );
 
+        if (currency == null ||
+                currency.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Currency is required for instrument: "
+                            + normalizedSymbol
+            );
+        }
+
         instrument.setCurrency(
-                currency == null ||
-                        currency.isBlank()
-                        ? "USD"
-                        : currency.trim()
+                currency.trim().toUpperCase()
         );
 
         instrument.setCurrentPrice(
@@ -530,22 +954,67 @@ public class InstrumentService {
         );
 
         // =====================================================
-        // RESOLVE ALPHA VANTAGE SYMBOL
+        // SAVE SELECTED PROVIDER
         // =====================================================
 
-        String alphaVantageSymbol =
-                alphaVantageSymbolResolver.resolve(
-                        normalizedSymbol,
-                        normalizedExchange,
-                        country
+        instrument.setMarketDataProvider(
+                normalizedProvider
+        );
+
+        // =====================================================
+        // SAVE PROVIDER-SPECIFIC SYMBOL
+        // =====================================================
+
+        switch (normalizedProvider) {
+
+            case "EODHD":
+
+                instrument.setEodhdSymbol(
+                        normalizedProviderSymbol
                 );
 
-        instrument.setAlphaVantageSymbol(
-                alphaVantageSymbol
+                break;
+
+            case "TWELVE_DATA":
+
+                instrument.setTwelveDataSymbol(
+                        normalizedProviderSymbol
+                );
+
+                break;
+
+            case "ALPHA_VANTAGE":
+
+                instrument.setAlphaVantageSymbol(
+                        normalizedProviderSymbol
+                );
+
+                break;
+
+            default:
+
+                throw new IllegalArgumentException(
+                        "Unsupported market-data provider: "
+                                + provider
+                );
+        }
+
+        Instrument savedInstrument =
+                instrumentRepository.save(
+                        instrument
+                );
+
+        System.out.println(
+                "New instrument created: "
+                        + normalizedSymbol
+                        + " ("
+                        + normalizedExchange
+                        + ") using "
+                        + normalizedProvider
+                        + " / "
+                        + normalizedProviderSymbol
         );
 
-        return instrumentRepository.save(
-                instrument
-        );
+        return savedInstrument;
     }
 }

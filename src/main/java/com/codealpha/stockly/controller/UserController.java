@@ -1,5 +1,6 @@
 package com.codealpha.stockly.controller;
 
+import com.codealpha.stockly.dto.UpdateBalanceRequest;
 import com.codealpha.stockly.dto.UserResponse;
 import com.codealpha.stockly.entity.Role;
 import com.codealpha.stockly.entity.User;
@@ -7,6 +8,8 @@ import com.codealpha.stockly.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.codealpha.stockly.dto.UpdateBalanceRequest;
+import jakarta.validation.Valid;
 
 import java.util.List;
 
@@ -124,5 +127,20 @@ public class UserController {
                 user.getVirtualBalance(),
                 user.getCreatedAt()
         );
+    }
+
+    @PutMapping("/admin/{id}/balance")
+    public UserResponse updateVirtualBalance(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateBalanceRequest request
+    ) {
+
+        User updatedUser =
+                userService.updateVirtualBalance(
+                        id,
+                        request.getAmount()
+                );
+
+        return toResponse(updatedUser);
     }
 }

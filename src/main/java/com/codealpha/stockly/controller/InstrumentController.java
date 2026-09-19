@@ -138,7 +138,9 @@ public class InstrumentController {
                         request.getAssetType(),
                         request.getExchange(),
                         request.getCountry(),
-                        request.getCurrency()
+                        request.getCurrency(),
+                        request.getProvider(),
+                        request.getProviderSymbol()
                 );
 
         return toResponse(instrument);

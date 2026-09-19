@@ -127,6 +127,7 @@ public class AlphaVantageMarketDataProvider
          *
          * Example:
          * TCS.BSE
+         * 7203.TKS
          */
         if (normalizedSymbol.contains(".")) {
 
@@ -160,10 +161,25 @@ public class AlphaVantageMarketDataProvider
         }
 
         /*
-         * Do NOT invent NSE mappings.
+         * Tokyo Stock Exchange.
          *
-         * Alpha Vantage has not returned usable quote
-         * data for our current TCS/NSE attempt.
+         * Twelve Data returns:
+         * exchange = JPX
+         *
+         * Alpha Vantage uses:
+         * exchange = TKS
+         *
+         * Example:
+         * Toyota 7203 -> 7203.TKS
+         */
+        if (normalizedExchange.equals("JPX")) {
+
+            return normalizedSymbol + ".TKS";
+        }
+
+        /*
+         * We intentionally do not invent mappings for
+         * unknown exchanges.
          */
         return normalizedSymbol;
     }

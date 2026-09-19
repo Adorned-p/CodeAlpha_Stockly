@@ -10,9 +10,31 @@ import java.util.Optional;
 public interface StockRepository
         extends JpaRepository<Stock, Long> {
 
+    // =========================================================
+    // STOCK LOOKUP
+    // =========================================================
+
     Optional<Stock> findBySymbol(String symbol);
 
+    Optional<Stock> findBySymbolAndExchange(
+            String symbol,
+            String exchange
+    );
+
+    // =========================================================
+    // EXISTENCE CHECK
+    // =========================================================
+
     boolean existsBySymbol(String symbol);
+
+    boolean existsBySymbolAndExchange(
+            String symbol,
+            String exchange
+    );
+
+    // =========================================================
+    // FILTERING
+    // =========================================================
 
     List<Stock> findBySectorIgnoreCase(String sector);
 

@@ -9,6 +9,23 @@ public class CreateInstrumentRequest {
     private String country;
     private String currency;
 
+    /*
+     * Provider that supplied the selected search result.
+     *
+     * Examples:
+     * EODHD
+     * TWELVE_DATA
+     */
+    private String provider;
+
+    /*
+     * Exact symbol returned by that provider.
+     *
+     * This should NOT be reconstructed from
+     * Stockly's symbol and exchange.
+     */
+    private String providerSymbol;
+
     public CreateInstrumentRequest() {
     }
 
@@ -58,5 +75,21 @@ public class CreateInstrumentRequest {
 
     public void setCurrency(String currency) {
         this.currency = currency;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
+    }
+
+    public String getProviderSymbol() {
+        return providerSymbol;
+    }
+
+    public void setProviderSymbol(String providerSymbol) {
+        this.providerSymbol = providerSymbol;
     }
 }

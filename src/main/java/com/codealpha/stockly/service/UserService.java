@@ -7,6 +7,7 @@ import com.codealpha.stockly.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -89,6 +90,27 @@ public class UserService {
         }
 
         user.setRole(role);
+
+        return userRepository.save(user);
+    }
+
+    @Transactional
+    public User updateVirtualBalance(
+            Long id,
+            BigDecimal amount
+    ) {
+
+        User user = getUserById(id);
+
+        if (amount == null ||
+                amount.compareTo(BigDecimal.ZERO) < 0) {
+
+            throw new IllegalArgumentException(
+                    "Balance amount cannot be negative"
+            );
+        }
+
+        user.setVirtualBalance(amount);
 
         return userRepository.save(user);
     }

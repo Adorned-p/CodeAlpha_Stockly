@@ -1,7 +1,11 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import {
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 
 import {
   ResponsiveContainer,
@@ -91,6 +95,11 @@ function StockDetails() {
   const { symbol } = useParams();
   const navigate = useNavigate();
 
+  const [searchParams] = useSearchParams();
+
+  const exchange =
+    searchParams.get("exchange")?.trim().toUpperCase() || "";
+
   // =========================================================
   // STOCK / USER / HOLDING
   // =========================================================
@@ -122,8 +131,17 @@ function StockDetails() {
   const [tradeType, setTradeType] =
     useState("BUY");
 
+  const [orderType, setOrderType] =
+    useState("MARKET");
+
   const [quantity, setQuantity] =
     useState(1);
+
+  const [limitPrice, setLimitPrice] =
+    useState("");
+
+  const [stopPrice, setStopPrice] =
+    useState("");
 
   const [loading, setLoading] =
     useState(true);
@@ -175,25 +193,45 @@ function StockDetails() {
       setLoading(true);
       setError("");
 
+      if (!exchange) {
+        setError(
+          "Stock exchange information is missing."
+        );
+        return;
+      }
+
       const response =
-        await api.get(`/stocks/${symbol}`);
+        await api.get(
+          `/stocks/${symbol}`,
+          {
+            params: {
+              exchange,
+            },
+          }
+        );
 
       setStock(response.data);
+
     } catch (error) {
+
       console.error(
         "Failed to fetch stock:",
         error
       );
 
       if (error.response?.status === 404) {
+
         setError(
-          "The stock you're looking for doesn't exist."
+          "The stock you're looking for doesn't exist on this exchange."
         );
+
       } else {
+
         setError(
           "Unable to load stock information."
         );
       }
+
     } finally {
       setLoading(false);
     }
@@ -206,6 +244,10 @@ function StockDetails() {
   const fetchHistory = async (
     range = selectedRange
   ) => {
+    if (!stock?.exchange) {
+      return;
+    }
+
     try {
       setHistoryLoading(true);
       setHistoryError("");
@@ -252,9 +294,10 @@ function StockDetails() {
 
       const response =
         await api.get(
-          `/market-data/history/${symbol}`,
+          `/market-data/${symbol}/history`,
           {
             params: {
+              exchange: stock.exchange,
               interval: selected.interval,
               outputSize: selected.outputSize,
             },
@@ -289,6 +332,7 @@ function StockDetails() {
         );
 
       setPriceHistory(normalizedData);
+
     } catch (error) {
       console.error(
         "Failed to fetch price history:",
@@ -301,6 +345,7 @@ function StockDetails() {
         error.response?.data?.message ||
           "Historical price data is not available for this period."
       );
+
     } finally {
       setHistoryLoading(false);
     }
@@ -339,15 +384,28 @@ function StockDetails() {
         response.data?.holdings || [];
 
       const currentHolding =
-        holdings.find(
-          (item) =>
+        holdings.find((item) => {
+
+          const sameSymbol =
             item.symbol
               ?.trim()
               .toUpperCase() ===
-            symbol
+            stock?.symbol
               ?.trim()
-              .toUpperCase()
-        );
+              .toUpperCase();
+
+          const sameExchange =
+            !item.exchange ||
+            !stock?.exchange ||
+            item.exchange
+              ?.trim()
+              .toUpperCase() ===
+            stock.exchange
+              ?.trim()
+              .toUpperCase();
+
+          return sameSymbol && sameExchange;
+        });
 
       if (currentHolding) {
         setHolding(currentHolding);
@@ -377,15 +435,28 @@ function StockDetails() {
         response.data || [];
 
       const exists =
-        watchlist.some(
-          (item) =>
+        watchlist.some((item) => {
+
+          const sameSymbol =
             item.symbol
               ?.trim()
               .toUpperCase() ===
-            symbol
+            stock?.symbol
               ?.trim()
-              .toUpperCase()
-        );
+              .toUpperCase();
+
+          const sameExchange =
+            !item.exchange ||
+            !stock?.exchange ||
+            item.exchange
+              ?.trim()
+              .toUpperCase() ===
+            stock.exchange
+              ?.trim()
+              .toUpperCase();
+
+          return sameSymbol && sameExchange;
+        });
 
       setIsWatchlisted(exists);
     } catch (error) {
@@ -405,9 +476,14 @@ function StockDetails() {
   useEffect(() => {
     fetchStock();
     fetchUser();
-    fetchHolding();
-    fetchWatchlistStatus();
-  }, [symbol]);
+  }, [symbol, exchange]);
+
+  useEffect(() => {
+    if (stock) {
+      fetchHolding();
+      fetchWatchlistStatus();
+    }
+  }, [stock]);
 
   // =========================================================
   // FETCH AI STOCK INSIGHT
@@ -491,7 +567,12 @@ function StockDetails() {
 
       if (isWatchlisted) {
         await api.delete(
-          `/watchlist/${stockSymbol}`
+          `/watchlist/${stockSymbol}`,
+          {
+            params: {
+              exchange: stock.exchange,
+            },
+          }
         );
 
         setIsWatchlisted(false);
@@ -627,8 +708,58 @@ function StockDetails() {
   // ESTIMATED TOTAL
   // =========================================================
 
+  const currentPriceInr =
+    Number(
+      stock?.currentPriceInr ??
+      stock?.currentPrice ??
+      0
+    );
+
+    const nativeCurrency =
+      stock?.currency || "INR";
+
+    const nativeCurrencySymbol = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      JPY: "¥",
+      CHF: "CHF ",
+      CAD: "C$",
+      AUD: "A$",
+      HKD: "HK$",
+      SGD: "S$",
+      KRW: "₩",
+      BRL: "R$",
+      ZAR: "R ",
+      AED: "د.إ "
+    }[nativeCurrency] || nativeCurrency + " ";
+
+    const formatNativePrice = (value) => {
+      return `${nativeCurrencySymbol}${formatPrice(value)}`;
+    };
+
+  const parsedLimitPrice =
+    Number(limitPrice || 0);
+
+  const parsedStopPrice =
+    Number(stopPrice || 0);
+
+  let estimatedUnitPrice =
+    currentPriceInr;
+
+  if (
+    orderType === "LIMIT" ||
+    orderType === "STOP_LIMIT"
+  ) {
+    if (parsedLimitPrice > 0) {
+      estimatedUnitPrice =
+        parsedLimitPrice;
+    }
+  }
+
   const estimatedTotal =
-    Number(stock?.currentPrice || 0) *
+    estimatedUnitPrice *
     Number(quantity || 0);
 
   // =========================================================
@@ -739,6 +870,7 @@ function StockDetails() {
 
   const handleTradeTypeChange =
     async (type) => {
+
       setTradeType(type);
       setTradeError("");
       setSuccess(null);
@@ -747,6 +879,17 @@ function StockDetails() {
       if (type === "SELL") {
         await fetchHolding();
       }
+    };
+
+    const handleOrderTypeChange = (type) => {
+
+      setOrderType(type);
+
+      setLimitPrice("");
+      setStopPrice("");
+
+      setTradeError("");
+      setSuccess(null);
     };
 
   // =========================================================
@@ -762,9 +905,7 @@ function StockDetails() {
     }
 
     const stockStatus =
-      String(
-        stock.status || ""
-      )
+      String(stock.status || "")
         .trim()
         .toUpperCase();
 
@@ -775,6 +916,10 @@ function StockDetails() {
 
       return;
     }
+
+    // =========================================================
+    // QUANTITY VALIDATION
+    // =========================================================
 
     if (
       !quantity ||
@@ -788,12 +933,14 @@ function StockDetails() {
       return;
     }
 
+    // =========================================================
+    // SELL HOLDING VALIDATION
+    // =========================================================
+
     if (
       tradeType === "SELL" &&
       quantity >
-        Number(
-          holding?.quantity || 0
-        )
+        Number(holding?.quantity || 0)
     ) {
       setTradeError(
         "You don't own enough shares to sell."
@@ -801,6 +948,50 @@ function StockDetails() {
 
       return;
     }
+
+    // =========================================================
+    // LIMIT PRICE VALIDATION
+    // =========================================================
+
+    if (
+      orderType === "LIMIT" ||
+      orderType === "STOP_LIMIT"
+    ) {
+      if (
+        !limitPrice ||
+        Number(limitPrice) <= 0
+      ) {
+        setTradeError(
+          "Valid INR limit price is required."
+        );
+
+        return;
+      }
+    }
+
+    // =========================================================
+    // STOP PRICE VALIDATION
+    // =========================================================
+
+    if (
+      orderType === "STOP" ||
+      orderType === "STOP_LIMIT"
+    ) {
+      if (
+        !stopPrice ||
+        Number(stopPrice) <= 0
+      ) {
+        setTradeError(
+          "Valid INR stop price is required."
+        );
+
+        return;
+      }
+    }
+
+    // =========================================================
+    // OPEN CONFIRMATION
+    // =========================================================
 
     setShowConfirmation(true);
   };
@@ -810,22 +1001,42 @@ function StockDetails() {
   // =========================================================
 
   const executeTrade = async () => {
+
     try {
+
       setTradeLoading(true);
       setTradeError("");
 
-      const endpoint =
-        tradeType === "BUY"
-          ? "/trades/buy"
-          : "/trades/sell";
+      const request = {
+          symbol: stock.symbol,
+          exchange: stock.exchange,
+          side: tradeType,
+          type: orderType,
+          quantity: quantity
+      };
+
+      if (
+        orderType === "LIMIT" ||
+        orderType === "STOP_LIMIT"
+      ) {
+
+        request.limitPrice =
+          Number(limitPrice);
+      }
+
+      if (
+        orderType === "STOP" ||
+        orderType === "STOP_LIMIT"
+      ) {
+
+        request.stopPrice =
+          Number(stopPrice);
+      }
 
       const response =
         await api.post(
-          endpoint,
-          {
-            symbol: stock.symbol,
-            quantity: quantity,
-          }
+          "/orders",
+          request
         );
 
       setShowConfirmation(false);
@@ -842,40 +1053,53 @@ function StockDetails() {
       ]);
 
       setQuantity(1);
+      setLimitPrice("");
+      setStopPrice("");
+
     } catch (error) {
+
       console.error(
-        "Trade failed:",
+        "Order failed:",
         error
       );
 
       let message =
-        "Unable to complete the trade.";
+        "Unable to complete the order.";
 
       if (
         error.response?.data?.message
       ) {
+
         message =
           error.response.data.message;
+
       } else if (
         error.response?.data?.error
       ) {
+
         message =
           error.response.data.error;
+
       } else if (
         error.response?.status === 400
       ) {
+
         message =
-          "The trade request is invalid.";
+          "The order request is invalid.";
+
       } else if (
         error.response?.status === 403
       ) {
+
         message =
           "You are not authorized to trade.";
       }
 
       setShowConfirmation(false);
       setTradeError(message);
+
     } finally {
+
       setTradeLoading(false);
     }
   };
@@ -1033,12 +1257,17 @@ function StockDetails() {
 
           <div className="stock-price-header">
 
-            <strong>
-              ₹{formatPrice(
-                stock.currentPriceInr ??
-                stock.currentPrice
+            <div className="stock-price-main">
+              <strong>
+                {formatNativePrice(stock.currentPrice)}
+              </strong>
+
+              {nativeCurrency !== "INR" && (
+                <span className="stock-price-inr">
+                  ≈ ₹{formatPrice(currentPriceInr)}
+                </span>
               )}
-            </strong>
+            </div>
 
             <div
               className={
@@ -1683,16 +1912,58 @@ function StockDetails() {
               <div>
 
                 <span>
-                  Current Price
+                  Market Price
                 </span>
 
                 <strong>
-                  ₹{formatPrice(
-                    stock.currentPrice
-                  )}
+                  {formatNativePrice(stock.currentPrice)}
                 </strong>
 
+                {nativeCurrency !== "INR" && (
+                  <div className="trade-price-inr">
+                    ≈ ₹{formatPrice(currentPriceInr)} INR
+                  </div>
+                )}
+
               </div>
+
+            </div>
+
+            {/* ORDER TYPE */}
+
+            <div className="trade-field">
+
+              <label htmlFor="order-type">
+                Order Type
+              </label>
+
+              <select
+                id="order-type"
+                name="orderType"
+                value={orderType}
+                onChange={(event) =>
+                  handleOrderTypeChange(
+                    event.target.value
+                  )
+                }
+                disabled={tradeLoading}
+              >
+                <option value="MARKET">
+                  Market
+                </option>
+
+                <option value="LIMIT">
+                  Limit
+                </option>
+
+                <option value="STOP">
+                  Stop
+                </option>
+
+                <option value="STOP_LIMIT">
+                  Stop Limit
+                </option>
+              </select>
 
             </div>
 
@@ -1742,6 +2013,70 @@ function StockDetails() {
               </div>
 
             </div>
+
+            {/* LIMIT PRICE */}
+
+            {(
+              orderType === "LIMIT" ||
+              orderType === "STOP_LIMIT"
+            ) && (
+
+              <div className="trade-field">
+
+                <label htmlFor="limit-price">
+                  Limit Price (INR)
+                </label>
+
+                <input
+                  id="limit-price"
+                  name="limitPrice"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Enter limit price"
+                  value={limitPrice}
+                  onChange={(event) =>
+                    setLimitPrice(
+                      event.target.value
+                    )
+                  }
+                  disabled={tradeLoading}
+                />
+
+              </div>
+            )}
+
+            {/* STOP PRICE */}
+
+            {(
+              orderType === "STOP" ||
+              orderType === "STOP_LIMIT"
+            ) && (
+
+              <div className="trade-field">
+
+                <label htmlFor="stop-price">
+                  Stop Price (INR)
+                </label>
+
+                <input
+                  id="stop-price"
+                  name="stopPrice"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Enter stop price"
+                  value={stopPrice}
+                  onChange={(event) =>
+                    setStopPrice(
+                      event.target.value
+                    )
+                  }
+                  disabled={tradeLoading}
+                />
+
+              </div>
+            )}
 
             {/* TOTAL */}
 
@@ -1820,26 +2155,38 @@ function StockDetails() {
             <div>
 
               <strong>
-                Trade completed
+                {success.data?.status === "FILLED"
+                  ? "Order executed"
+                  : "Order placed"}
               </strong>
 
               <p>
-                You{" "}
-                {success.type === "BUY"
-                  ? "bought"
-                  : "sold"}{" "}
-                {quantity} shares of{" "}
-                {stock.symbol}.
+                {success.data?.status === "FILLED"
+                  ? `Your ${orderType.replace(
+                      "_",
+                      " "
+                    ).toLowerCase()} order for ${
+                      quantity
+                    } share${
+                      quantity > 1 ? "s" : ""
+                    } of ${
+                      stock.symbol
+                    } was executed.`
+                  : `Your ${orderType.replace(
+                      "_",
+                      " "
+                    ).toLowerCase()} order for ${
+                      quantity
+                    } share${
+                      quantity > 1 ? "s" : ""
+                    } of ${
+                      stock.symbol
+                    } has been placed.`}
               </p>
 
-              {success.data
-                ?.transactionReference && (
+              {success.data?.id && (
                 <span>
-                  Transaction ID:{" "}
-                  {
-                    success.data
-                      .transactionReference
-                  }
+                  Order ID: {success.data.id}
                 </span>
               )}
 
@@ -1948,16 +2295,44 @@ function StockDetails() {
               <div>
 
                 <span>
-                  Price per share
+                  {orderType === "MARKET"
+                    ? "Market Price"
+                    : orderType === "LIMIT"
+                    ? "Limit Price"
+                    : orderType === "STOP"
+                    ? "Stop Price"
+                    : "Limit Price"}
                 </span>
 
                 <strong>
                   ₹{formatPrice(
-                    stock.currentPrice
+                    orderType === "LIMIT" ||
+                    orderType === "STOP_LIMIT"
+                      ? limitPrice
+                      : orderType === "STOP"
+                      ? stopPrice
+                      : currentPriceInr
                   )}
                 </strong>
 
               </div>
+
+              {orderType === "STOP_LIMIT" && (
+
+                <div>
+
+                  <span>
+                    Stop Price
+                  </span>
+
+                  <strong>
+                    ₹{formatPrice(
+                      stopPrice
+                    )}
+                  </strong>
+
+                </div>
+              )}
 
               <div>
 

@@ -30,39 +30,91 @@ public class MarketQuoteService {
     private final MarketQuoteRepository marketQuoteRepository;
     private final InstrumentRepository instrumentRepository;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
+    private final CurrencyConversionService currencyConversionService;
 
     public MarketQuoteService(
             MarketQuoteRepository marketQuoteRepository,
             InstrumentRepository instrumentRepository,
-            StockPriceHistoryRepository stockPriceHistoryRepository
+            StockPriceHistoryRepository stockPriceHistoryRepository,
+            CurrencyConversionService currencyConversionService
     ) {
-        this.marketQuoteRepository = marketQuoteRepository;
-        this.instrumentRepository = instrumentRepository;
-        this.stockPriceHistoryRepository = stockPriceHistoryRepository;
+
+        this.marketQuoteRepository =
+                marketQuoteRepository;
+
+        this.instrumentRepository =
+                instrumentRepository;
+
+        this.stockPriceHistoryRepository =
+                stockPriceHistoryRepository;
+
+        this.currencyConversionService =
+                currencyConversionService;
     }
 
     // =========================================================
-    // CURRENT QUOTE
-    // =========================================================
+// CURRENT QUOTE BY SYMBOL
+// =========================================================
 
-    public MarketQuoteResponse getQuote(String symbol) {
+    public MarketQuoteResponse getQuote(
+            String symbol,
+            String exchange
+    ) {
 
         if (symbol == null || symbol.isBlank()) {
-            throw new IllegalArgumentException("Symbol is required");
+            throw new IllegalArgumentException(
+                    "Symbol is required"
+            );
+        }
+
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Exchange is required"
+            );
         }
 
         String normalizedSymbol =
                 symbol.trim().toUpperCase();
 
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
         Instrument instrument =
                 instrumentRepository
-                        .findBySymbol(normalizedSymbol)
+                        .findBySymbolAndExchange(
+                                normalizedSymbol,
+                                normalizedExchange
+                        )
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
                                         "Instrument not found: "
                                                 + normalizedSymbol
+                                                + " on "
+                                                + normalizedExchange
                                 )
                         );
+
+        return getQuote(instrument);
+    }
+
+// =========================================================
+// CURRENT QUOTE BY EXACT INSTRUMENT
+// =========================================================
+
+    public MarketQuoteResponse getQuote(
+            Instrument instrument
+    ) {
+
+        if (instrument == null) {
+
+            throw new IllegalArgumentException(
+                    "Instrument is required"
+            );
+        }
+
+        // ---------------------------------------------------------
+        // FIND MARKET QUOTE
+        // ---------------------------------------------------------
 
         MarketQuote quote =
                 marketQuoteRepository
@@ -70,7 +122,7 @@ public class MarketQuoteService {
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
                                         "Market quote not available for "
-                                                + normalizedSymbol
+                                                + instrument.getSymbol()
                                 )
                         );
 
@@ -78,13 +130,70 @@ public class MarketQuoteService {
                 quote.getLastPrice();
 
         if (lastPrice == null ||
-                lastPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                lastPrice.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0) {
 
             throw new IllegalArgumentException(
                     "Invalid market price available for "
-                            + normalizedSymbol
+                            + instrument.getSymbol()
             );
         }
+
+        // ---------------------------------------------------------
+        // NATIVE CURRENCY
+        // ---------------------------------------------------------
+
+        String currency =
+                instrument.getCurrency();
+
+        if (currency == null ||
+                currency.isBlank()) {
+
+            currency = "INR";
+        }
+
+        currency =
+                currency
+                        .trim()
+                        .toUpperCase();
+
+        // ---------------------------------------------------------
+        // CONVERT CURRENT PRICE TO INR
+        // ---------------------------------------------------------
+
+        BigDecimal exchangeRateToInr =
+                currencyConversionService
+                        .getExchangeRate(
+                                currency
+                        );
+
+        BigDecimal currentPriceInr =
+                currencyConversionService
+                        .convertToInr(
+                                lastPrice,
+                                currency
+                        );
+
+        /*
+         * If the stock is foreign and the FX provider
+         * temporarily failed, do not pretend that the
+         * native price is an INR price.
+         */
+        if (currentPriceInr == null) {
+
+            throw new IllegalArgumentException(
+                    "INR conversion unavailable for "
+                            + instrument.getSymbol()
+                            + " ("
+                            + currency
+                            + ")"
+            );
+        }
+
+        // ---------------------------------------------------------
+        // STOCK DATA
+        // ---------------------------------------------------------
 
         Stock stock =
                 instrument.getStock();
@@ -113,17 +222,27 @@ public class MarketQuoteService {
                         ? stock.getDayLow()
                         : lastPrice;
 
+        // ---------------------------------------------------------
+        // NATIVE CURRENCY CHANGE
+        // ---------------------------------------------------------
+
         BigDecimal change =
-                lastPrice.subtract(previousClose);
+                lastPrice.subtract(
+                        previousClose
+                );
 
         BigDecimal percentChange =
                 BigDecimal.ZERO;
 
-        if (previousClose.compareTo(BigDecimal.ZERO) > 0) {
+        if (previousClose.compareTo(
+                BigDecimal.ZERO
+        ) > 0) {
 
             percentChange =
                     change
-                            .multiply(BigDecimal.valueOf(100))
+                            .multiply(
+                                    BigDecimal.valueOf(100)
+                            )
                             .divide(
                                     previousClose,
                                     2,
@@ -131,12 +250,18 @@ public class MarketQuoteService {
                             );
         }
 
+        // ---------------------------------------------------------
+        // RESPONSE
+        // ---------------------------------------------------------
+
         return new MarketQuoteResponse(
                 instrument.getSymbol(),
                 instrument.getName(),
                 instrument.getExchange(),
-                instrument.getCurrency(),
+                currency,
                 lastPrice,
+                currentPriceInr,
+                exchangeRateToInr,
                 openingPrice,
                 previousClose,
                 high,
@@ -148,12 +273,13 @@ public class MarketQuoteService {
     }
 
     // =========================================================
-    // UPDATE QUOTE
-    // =========================================================
+// UPDATE QUOTE
+// =========================================================
 
     @Transactional
     public MarketQuote updateQuote(
             String symbol,
+            String exchange,
             BigDecimal bidPrice,
             BigDecimal askPrice,
             BigDecimal lastPrice
@@ -171,16 +297,30 @@ public class MarketQuoteService {
             );
         }
 
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Exchange is required"
+            );
+        }
+
         String normalizedSymbol =
                 symbol.trim().toUpperCase();
 
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
         Instrument instrument =
                 instrumentRepository
-                        .findBySymbol(normalizedSymbol)
+                        .findBySymbolAndExchange(
+                                normalizedSymbol,
+                                normalizedExchange
+                        )
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
                                         "Instrument not found: "
                                                 + normalizedSymbol
+                                                + " on "
+                                                + normalizedExchange
                                 )
                         );
 
@@ -217,6 +357,7 @@ public class MarketQuoteService {
 
     public List<MarketCandleResponse> getHistoricalData(
             String symbol,
+            String exchange,
             String interval,
             int outputSize
     ) {
@@ -224,6 +365,12 @@ public class MarketQuoteService {
         // ---------------------------------------------------------
         // VALIDATION
         // ---------------------------------------------------------
+
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Exchange is required"
+            );
+        }
 
         if (symbol == null || symbol.isBlank()) {
             throw new IllegalArgumentException(
@@ -243,6 +390,9 @@ public class MarketQuoteService {
             );
         }
 
+        String normalizedExchange =
+                exchange.trim().toUpperCase();
+
         String normalizedSymbol =
                 symbol.trim().toUpperCase();
 
@@ -255,11 +405,16 @@ public class MarketQuoteService {
 
         Instrument instrument =
                 instrumentRepository
-                        .findBySymbol(normalizedSymbol)
+                        .findBySymbolAndExchange(
+                                normalizedSymbol,
+                                normalizedExchange
+                        )
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
                                         "Instrument not found: "
                                                 + normalizedSymbol
+                                                + " on "
+                                                + normalizedExchange
                                 )
                         );
 

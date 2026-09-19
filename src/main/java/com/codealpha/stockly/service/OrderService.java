@@ -1,5 +1,6 @@
 package com.codealpha.stockly.service;
 
+import com.codealpha.stockly.dto.MarketQuoteResponse;
 import com.codealpha.stockly.exception.ResourceNotFoundException;
 import com.codealpha.stockly.dto.OrderRequest;
 import com.codealpha.stockly.dto.OrderResponse;
@@ -76,15 +77,27 @@ public class OrderService {
                         );
 
         String symbol =
-                request.getSymbol().toUpperCase();
+                request.getSymbol()
+                        .trim()
+                        .toUpperCase();
+
+        String exchange =
+                request.getExchange()
+                        .trim()
+                        .toUpperCase();
 
         Instrument instrument =
                 instrumentRepository
-                        .findBySymbol(symbol)
+                        .findBySymbolAndExchange(
+                                symbol,
+                                exchange
+                        )
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
                                         "Instrument not found: "
                                                 + symbol
+                                                + " on "
+                                                + exchange
                                 )
                         );
 
@@ -124,8 +137,20 @@ public class OrderService {
 
         if (request.getType() == OrderType.MARKET) {
 
+            /*
+             * Get the latest market quote through
+             * MarketQuoteService.
+             *
+             * currentPrice    = native market currency
+             * currentPriceInr = STOCKLY trading price in INR
+             */
+            MarketQuoteResponse quote =
+                    marketQuoteService.getQuote(
+                            instrument
+                    );
+
             BigDecimal executionPrice =
-                    instrument.getCurrentPrice();
+                    quote.getCurrentPriceInr();
 
             if (executionPrice == null ||
                     executionPrice.compareTo(
@@ -133,7 +158,7 @@ public class OrderService {
                     ) <= 0) {
 
                 throw new IllegalArgumentException(
-                        "Current market price is not available for "
+                        "Current INR market price is not available for "
                                 + instrument.getSymbol()
                 );
             }
@@ -707,12 +732,9 @@ public class OrderService {
     // VALIDATION
     // =========================================================
 
-    private void validateOrder(
-            OrderRequest request
-    ) {
+    private void validateOrder(OrderRequest request) {
 
         if (request == null) {
-
             throw new IllegalArgumentException(
                     "Order request is required"
             );
@@ -723,6 +745,14 @@ public class OrderService {
 
             throw new IllegalArgumentException(
                     "Stock symbol is required"
+            );
+        }
+
+        if (request.getExchange() == null ||
+                request.getExchange().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Exchange is required"
             );
         }
 
@@ -748,58 +778,9 @@ public class OrderService {
             );
         }
 
-        // -----------------------------------------
-        // LIMIT
-        // -----------------------------------------
-
-        if (request.getType() == OrderType.LIMIT) {
-
-            if (request.getLimitPrice() == null ||
-                    request.getLimitPrice()
-                            .compareTo(BigDecimal.ZERO) <= 0) {
-
-                throw new IllegalArgumentException(
-                        "Valid limit price is required"
-                );
-            }
-        }
-
-        // -----------------------------------------
-// STOP
-// -----------------------------------------
-
-        if (request.getType() == OrderType.STOP ||
-                request.getType() == OrderType.STOP_LIMIT) {
-
-            if (request.getStopPrice() == null ||
-                    request.getStopPrice()
-                            .compareTo(BigDecimal.ZERO) <= 0) {
-
-                throw new IllegalArgumentException(
-                        "Valid stop price is required"
-                );
-            }
-        }
-
-// -----------------------------------------
-// STOP LIMIT
-// -----------------------------------------
-
-        if (request.getType() == OrderType.STOP_LIMIT) {
-
-            if (request.getLimitPrice() == null ||
-                    request.getLimitPrice()
-                            .compareTo(BigDecimal.ZERO) <= 0) {
-
-                throw new IllegalArgumentException(
-                        "Valid limit price is required for STOP_LIMIT"
-                );
-            }
-        }
-
-        // -----------------------------------------
+        // =========================================================
         // MARKET
-        // -----------------------------------------
+        // =========================================================
 
         if (request.getType() == OrderType.MARKET) {
 
@@ -816,7 +797,90 @@ public class OrderService {
                         "Market orders cannot have a stop price"
                 );
             }
+
+            return;
         }
+
+        // =========================================================
+        // LIMIT
+        // =========================================================
+
+        if (request.getType() == OrderType.LIMIT) {
+
+            if (request.getLimitPrice() == null ||
+                    request.getLimitPrice()
+                            .compareTo(BigDecimal.ZERO) <= 0) {
+
+                throw new IllegalArgumentException(
+                        "Valid INR limit price is required"
+                );
+            }
+
+            if (request.getStopPrice() != null) {
+
+                throw new IllegalArgumentException(
+                        "Limit orders cannot have a stop price"
+                );
+            }
+
+            return;
+        }
+
+        // =========================================================
+        // STOP
+        // =========================================================
+
+        if (request.getType() == OrderType.STOP) {
+
+            if (request.getStopPrice() == null ||
+                    request.getStopPrice()
+                            .compareTo(BigDecimal.ZERO) <= 0) {
+
+                throw new IllegalArgumentException(
+                        "Valid INR stop price is required"
+                );
+            }
+
+            if (request.getLimitPrice() != null) {
+
+                throw new IllegalArgumentException(
+                        "Stop orders cannot have a limit price"
+                );
+            }
+
+            return;
+        }
+
+        // =========================================================
+        // STOP LIMIT
+        // =========================================================
+
+        if (request.getType() == OrderType.STOP_LIMIT) {
+
+            if (request.getStopPrice() == null ||
+                    request.getStopPrice()
+                            .compareTo(BigDecimal.ZERO) <= 0) {
+
+                throw new IllegalArgumentException(
+                        "Valid INR stop price is required"
+                );
+            }
+
+            if (request.getLimitPrice() == null ||
+                    request.getLimitPrice()
+                            .compareTo(BigDecimal.ZERO) <= 0) {
+
+                throw new IllegalArgumentException(
+                        "Valid INR limit price is required for STOP_LIMIT"
+                );
+            }
+
+            return;
+        }
+
+        throw new IllegalArgumentException(
+                "Unsupported order type: " + request.getType()
+        );
     }
 
     // =========================================================
@@ -834,6 +898,10 @@ public class OrderService {
             return;
         }
 
+        if (order.isStopTriggered()) {
+            return;
+        }
+
         if (order.getType() != OrderType.STOP &&
                 order.getType() != OrderType.STOP_LIMIT) {
             return;
@@ -846,8 +914,13 @@ public class OrderService {
             return;
         }
 
+        MarketQuoteResponse quote =
+                marketQuoteService.getQuote(
+                        instrument
+                );
+
         BigDecimal marketPrice =
-                instrument.getCurrentPrice();
+                quote.getCurrentPriceInr();
 
         if (marketPrice == null ||
                 marketPrice.compareTo(BigDecimal.ZERO) <= 0) {
@@ -902,16 +975,32 @@ public class OrderService {
         if (order.getType() == OrderType.STOP_LIMIT) {
 
             /*
-             * The stop has triggered.
+             * The stop condition has been reached.
              *
-             * Keep the STOP_LIMIT type for order history,
-             * but now give the matching engine the limit price.
+             * Mark the STOP_LIMIT as triggered so that
+             * StopOrderService does not trigger it again.
+             *
+             * The order remains STOP_LIMIT in the database/history
+             * and continues behaving as an active limit order.
              */
 
+            order.setStopTriggered(true);
             order.setStatus(OrderStatus.OPEN);
             order.setUpdatedAt(LocalDateTime.now());
 
             orderRepository.save(order);
+
+            System.out.println(
+                    "[STOP LIMIT ACTIVATED] Order "
+                            + order.getId()
+                            + " | Limit price: "
+                            + order.getLimitPrice()
+            );
+
+            /*
+             * Now let the matching engine try to match
+             * the activated limit order.
+             */
 
             matchingEngineService.match(order);
 
@@ -1022,8 +1111,18 @@ public class OrderService {
                 reservedBalance = BigDecimal.ZERO;
             }
 
-            BigDecimal reservationPrice =
-                    order.getStopPrice();
+            BigDecimal reservationPrice;
+
+            if (order.getType() == OrderType.STOP_LIMIT) {
+
+                reservationPrice =
+                        order.getLimitPrice();
+
+            } else {
+
+                reservationPrice =
+                        order.getStopPrice();
+            }
 
             BigDecimal amount =
                     reservationPrice.multiply(

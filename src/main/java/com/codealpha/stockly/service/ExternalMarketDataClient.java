@@ -118,6 +118,67 @@ public class ExternalMarketDataClient {
     }
 
     // =========================================================
+// QUOTE USING PROVIDER-SPECIFIC SYMBOL
+// =========================================================
+
+    public ExternalQuoteResponse getQuoteByProviderSymbol(
+            String providerSymbol
+    ) {
+
+        if (providerSymbol == null ||
+                providerSymbol.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Twelve Data provider symbol is required"
+            );
+        }
+
+        String normalizedProviderSymbol =
+                providerSymbol.trim().toUpperCase();
+
+        System.out.println(
+                "[TWELVE DATA] Requesting provider symbol: "
+                        + normalizedProviderSymbol
+        );
+
+        return restClient.get()
+                .uri(uriBuilder ->
+                        uriBuilder
+                                .path("/quote")
+                                .queryParam(
+                                        "symbol",
+                                        normalizedProviderSymbol
+                                )
+                                .queryParam(
+                                        "apikey",
+                                        apiKey
+                                )
+                                .build()
+                )
+                .retrieve()
+                .onStatus(
+                        status -> status.value() == 429,
+                        (request, response) -> {
+
+                            System.err.println(
+                                    "[TWELVE DATA] HTTP status: "
+                                            + response.getStatusCode()
+                            );
+
+                            throw org.springframework.web.client
+                                    .HttpClientErrorException.create(
+                                            response.getStatusCode(),
+                                            "Twelve Data daily quota exhausted",
+                                            response.getHeaders(),
+                                            new byte[0],
+                                            java.nio.charset.StandardCharsets.UTF_8
+                                    );
+                        }
+                )
+                .body(ExternalQuoteResponse.class);
+    }
+
+    // =========================================================
     // HISTORICAL DATA
     // =========================================================
 

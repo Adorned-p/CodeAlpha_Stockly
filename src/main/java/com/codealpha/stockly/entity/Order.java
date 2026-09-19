@@ -29,6 +29,9 @@ public class Order {
     @Column(nullable = false)
     private OrderType type;
 
+    @Column(nullable = false)
+    private boolean stopTriggered = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status;
@@ -98,6 +101,14 @@ public class Order {
 
     public void setStatus(OrderStatus status) {
         this.status = status;
+    }
+
+    public boolean isStopTriggered() {
+        return stopTriggered;
+    }
+
+    public void setStopTriggered(boolean stopTriggered) {
+        this.stopTriggered = stopTriggered;
     }
 
     public Integer getQuantity() {
